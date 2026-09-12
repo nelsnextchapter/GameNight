@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trivia Board</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Manrope:wght@400;500;700;800&display=swap');
+
+  :root{
+    --stage-navy: #0B1E3D;
+    --stage-navy-deep: #071531;
+    --board-blue: #1F3B73;
+    --board-blue-light: #2A4E96;
+    --marquee-gold: #F2B705;
+    --marquee-gold-dim: #C99A04;
+    --spark-white: #F5F7FA;
+    --muted: #9FB1D6;
+    --correct-green: #2FA84F;
+    --wrong-red: #D64545;
+    --ink: #101623;
+    --panel: #12274F;
+    --radius: 10px;
+    --font-display: 'Archivo Black', 'Arial Black', sans-serif;
+    --font-body: 'Manrope', system-ui, sans-serif;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background: radial-gradient(ellipse at top, var(--stage-navy) 0%, var(--stage-navy-deep) 70%);
+    color: var(--spark-white);
+    font-family: var(--font-body);
+    min-height: 100vh;
+  }
+  #app{ min-height:100vh; display:flex; flex-direction:column; }
+
+  button{
+    font-family: var(--font-body);
+    cursor:pointer;
+    border:none;
+  }
+  input{
+    font-family: var(--font-body);
+  }
+  a{ color: var(--marquee-gold); }
+
+  /* ---------- Landing ---------- */
+  .landing{
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:32px 20px; text-align:center; gap:28px;
+  }
+  .marquee-title{
+    font-family: var(--font-display);
+    font-size: clamp(32px, 7vw, 56px);
+    letter-spacing: 0.5px;
+    color: var(--marquee-gold);
+    text-shadow: 0 0 18px rgba(242,183,5,0.35);
+    margin:0;
+  }
+  .marquee-sub{ color: var(--muted); font-size:16px; margin-top:-14px; }
+  .role-buttons{ display:flex; gap:18px; flex-wrap:wrap; justify-content:center; }
+  .big-btn{
+    background: var(--marquee-gold);
+    color: var(--ink);
+    font-weight:800;
+    font-size:17px;
+    padding:18px 30px;
+    border-radius: var(--radius);
+    min-width:210px;
+    transition: transform .12s ease, box-shadow .12s ease;
+    box-shadow: 0 4px 0 var(--marquee-gold-dim);
+  }
+  .big-btn:active{ transform: translateY(3px); box-shadow: 0 1px 0 var(--marquee-gold-dim); }
+  .big-btn.secondary{
+    background: transparent;
+    color: var(--spark-white);
+    border: 2px solid var(--board-blue-light);
+    box-shadow:none;
+  }
+  .big-btn.secondary:active{ transform: translateY(1px); }
+  .big-btn:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  /* ---------- Forms / panels ---------- */
+  .panel{
+    background: var(--panel);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 26px;
+    max-width: 440px;
+    width:100%;
+  }
+  .field{ text-align:left; margin-bottom:16px; }
+  .field label{ display:block; font-size:13px; color: var(--muted); margin-bottom:6px; font-weight:700; }
+  .field input, .field select{
+    width:100%; padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.06); color: var(--spark-white); font-size:16px;
+  }
+  .field input::placeholder{ color: rgba(255,255,255,0.35); }
+  .error-text{ color:#FF9C9C; font-size:14px; margin-top:8px; }
+  .hint-text{ color: var(--muted); font-size:13px; margin-top:6px; }
+
+  .team-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:18px; }
+  .team-pick{
+    padding:14px 10px; border-radius:10px; border:2px solid transparent;
+    background: rgba(255,255,255,0.06); color: var(--spark-white); font-weight:700; font-size:14px;
+  }
+  .team-pick.selected{ border-color: var(--marquee-gold); background: rgba(242,183,5,0.15); }
+  .team-pick.no-team{ grid-column: span 2; background: rgba(255,255,255,0.03); }
+
+  /* ---------- Host: top bar ---------- */
+  .host-topbar{
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    padding:14px 22px; background: rgba(0,0,0,0.25); flex-wrap:wrap;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .room-chip{
+    display:flex; align-items:center; gap:10px; background: rgba(242,183,5,0.12);
+    border:1px solid rgba(242,183,5,0.4); border-radius:10px; padding:8px 14px;
+  }
+  .room-chip .code{ font-family: var(--font-display); font-size:22px; letter-spacing:3px; color: var(--marquee-gold); }
+  .room-chip .label{ font-size:11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .topbar-controls{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+
+  .toggle-row{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); }
+  .toggle{
+    width:46px; height:26px; border-radius:20px; background: rgba(255,255,255,0.15);
+    position:relative; transition: background .15s ease;
+  }
+  .toggle.on{ background: var(--marquee-gold); }
+  .toggle .knob{
+    position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%;
+    background: var(--spark-white); transition: left .15s ease;
+  }
+  .toggle.on .knob{ left:23px; }
+
+  .small-btn{
+    background: rgba(255,255,255,0.08); color: var(--spark-white); font-size:13px; font-weight:700;
+    padding:9px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.15);
+  }
+  .small-btn:hover{ background: rgba(255,255,255,0.14); }
+  .small-btn.danger{ background: rgba(214,69,69,0.18); border-color: rgba(214,69,69,0.4); color:#FFB3B3; }
+
+  /* ---------- Scoreboard strip ---------- */
+  .scoreboard{ display:flex; gap:10px; padding:12px 22px; flex-wrap:wrap; }
+  .team-pill{
+    display:flex; align-items:center; gap:8px; padding:8px 14px; border-radius:24px;
+    background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);
+  }
+  .team-dot{ width:10px; height:10px; border-radius:50%; }
+  .team-pill .tname{ font-size:13px; font-weight:700; }
+  .team-pill .tscore{ font-family: var(--font-display); font-size:15px; color: var(--marquee-gold); }
+  .team-pill input{ background:transparent; border:none; color:var(--spark-white); font-weight:700; font-size:13px; width:90px; }
+
+  /* ---------- Board ---------- */
+  .board-wrap{ flex:1; padding: 18px 22px 30px; display:flex; flex-direction:column; }
+  .board{
+    display:grid; grid-template-columns: repeat(6, 1fr); gap:8px; flex:1;
+  }
+  .cat-header{
+    background: var(--board-blue); border-radius:8px; padding:14px 8px; text-align:center;
+    font-family: var(--font-display); font-size: clamp(11px,1.4vw,15px); letter-spacing:0.5px;
+    display:flex; align-items:center; justify-content:center; min-height:64px; line-height:1.25;
+  }
+  .clue-tile{
+    background: linear-gradient(180deg, var(--board-blue-light), var(--board-blue));
+    border-radius:8px; display:flex; align-items:center; justify-content:center;
+    font-family: var(--font-display); font-size: clamp(18px,2.4vw,28px); color: var(--marquee-gold);
+    min-height:72px; transition: transform .1s ease, filter .1s ease;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  .clue-tile:hover{ transform: translateY(-2px); filter:brightness(1.12); }
+  .clue-tile.used{
+    background: rgba(255,255,255,0.03); color: rgba(255,255,255,0.15); cursor:default;
+    box-shadow:none;
+  }
+  .clue-tile.used:hover{ transform:none; filter:none; }
+
+  /* ---------- Clue overlay ---------- */
+  .overlay{
+    position:fixed; inset:0; background: rgba(4,10,25,0.94); z-index:50;
+    display:flex; flex-direction:column;
+  }
+  .overlay-top{ display:flex; justify-content:space-between; align-items:center; padding:16px 22px; }
+  .overlay-cat{ color: var(--muted); font-size:14px; text-transform:uppercase; letter-spacing:1px; }
+  .overlay-value{ font-family: var(--font-display); color: var(--marquee-gold); font-size:20px; }
+  .overlay-body{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; gap:22px; overflow-y:auto; }
+  .clue-text{ font-size: clamp(20px,3.4vw,34px); text-align:center; max-width:900px; line-height:1.35; font-weight:700; }
+  .clue-media img, .clue-media video{ max-width:min(640px,90vw); max-height:42vh; border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,0.5); }
+  .answer-reveal{ font-size:22px; color: var(--correct-green); font-weight:800; text-align:center; }
+
+  .overlay-controls{ padding:18px 22px 28px; display:flex; flex-direction:column; gap:16px; align-items:center; }
+  .control-row{ display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+
+  .buzz-feed, .answer-feed{
+    width:100%; max-width:640px; display:flex; flex-direction:column; gap:8px;
+    max-height:220px; overflow-y:auto; padding-right:4px;
+  }
+  .feed-empty{ color: var(--muted); text-align:center; font-size:14px; padding:14px; }
+  .feed-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background: rgba(255,255,255,0.05); border-radius:8px; padding:10px 14px;
+  }
+  .feed-row.locked{ opacity:0.4; }
+  .feed-rank{ font-family: var(--font-display); color: var(--marquee-gold); width:26px; }
+  .feed-name{ flex:1; font-weight:700; font-size:14px; }
+  .feed-team{ font-size:11px; color: var(--muted); text-transform:uppercase; }
+  .feed-answer-text{ flex:2; font-size:14px; color: var(--spark-white); }
+  .feed-actions{ display:flex; gap:6px; }
+  .mini-btn{ padding:6px 10px; border-radius:6px; font-size:12px; font-weight:700; }
+  .mini-btn.correct{ background: var(--correct-green); color:#fff; }
+  .mini-btn.wrong{ background: var(--wrong-red); color:#fff; }
+
+  /* ---------- Player view ---------- */
+  .player-wrap{ flex:1; display:flex; flex-direction:column; }
+  .player-status-bar{
+    padding:14px 20px; background: rgba(0,0,0,0.25); display:flex; justify-content:space-between;
+    align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); font-size:13px; color:var(--muted);
+  }
+  .player-main{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; gap:22px; text-align:center; }
+  .waiting-pulse{ font-family: var(--font-display); font-size:20px; color: var(--muted); letter-spacing:1px; }
+
+  .buzzer-btn{
+    width: min(260px, 60vw); height: min(260px, 60vw); border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #FF5C5C, #C21818);
+    color:#fff; font-family: var(--font-display); font-size:28px; letter-spacing:1px;
+    box-shadow: 0 10px 0 #7A0E0E, 0 14px 30px rgba(0,0,0,0.5);
+    transition: transform .08s ease, box-shadow .08s ease;
+  }
+  .buzzer-btn:active{ transform: translateY(8px); box-shadow: 0 2px 0 #7A0E0E, 0 6px 16px rgba(0,0,0,0.5); }
+  .buzzer-btn:disabled{
+    background: radial-gradient(circle at 35% 30%, #4a4a4a, #2b2b2b);
+    box-shadow: 0 10px 0 #1a1a1a; color: rgba(255,255,255,0.5); cursor:not-allowed;
+  }
+  .buzz-rank-msg{ font-size:18px; font-weight:800; color: var(--marquee-gold); }
+
+  .answer-box{ width:100%; max-width:420px; display:flex; flex-direction:column; gap:12px; }
+  .answer-box textarea{
+    width:100%; min-height:90px; border-radius:10px; padding:14px; font-size:16px;
+    border:1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); color:var(--spark-white); resize:vertical;
+  }
+
+  .roster-strip{ padding:14px 20px; }
+  .roster-groups{ display:flex; gap:16px; flex-wrap:wrap; }
+  .roster-group{ min-width:140px; }
+  .roster-group h4{ margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); }
+  .roster-group ul{ list-style:none; margin:0; padding:0; font-size:13px; }
+  .roster-group li{ padding:2px 0; }
+
+  @media (max-width:720px){
+    .board{ grid-template-columns: repeat(3,1fr); }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js"></script>
+<script>
+/* ============================================================
+   DATA: placeholder board content — swap in real clues later
+   ============================================================ */
+const PLACEHOLDER_IMG = "data:image/svg+xml;utf8," + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360">' +
+  '<rect width="640" height="360" fill="#2A4E96"/>' +
+  '<text x="320" y="190" font-family="Arial" font-size="34" fill="#F2B705" text-anchor="middle">IMAGE CLUE GOES HERE</text>' +
+  '</svg>'
+);
+
+function makeClue(id, value, clue, answer, media){
+  return { id, value, clue, answer, media: media || null };
+}
+
+const DEFAULT_CATEGORIES = [
+  { id:'c1', name:'Category One', clues:[200,400,600,800,1000].map((v,i)=>makeClue('c1_'+v, v, 'Placeholder clue text for '+v+' points in Category One.', 'Placeholder answer '+(i+1))) },
+  { id:'c2', name:'Category Two', clues:[200,400,600,800,1000].map((v,i)=>makeClue('c2_'+v, v, 'Placeholder clue text for '+v+' points in Category Two.', 'Placeholder answer '+(i+1))) },
+  { id:'c3', name:'Category Three', clues:[200,400,600,800,1000].map((v,i)=>makeClue('c3_'+v, v, 'Placeholder clue text for '+v+' points in Category Three.', 'Placeholder answer '+(i+1))) },
+  { id:'c4', name:'Category Four', clues:[200,400,600,800,1000].map((v,i)=>makeClue('c4_'+v, v, 'Placeholder clue text for '+v+' points in Category Four.', 'Placeholder answer '+(i+1))) },
+  { id:'c5', name:'Category Five', clues:[200,400,600,800,1000].map((v,i)=>makeClue('c5_'+v, v, 'Placeholder clue text for '+v+' points in Category Five.', 'Placeholder answer '+(i+1))) },
+  { id:'c6', name:'Watch & Guess', clues:[
+      makeClue('c6_200', 200, 'Watch the clip, then name what it shows.', 'A flower blooming', {type:'video', url:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'}),
+      makeClue('c6_400', 400, 'Look at the image below — what does it represent?', 'A placeholder image', {type:'image', url:PLACEHOLDER_IMG}),
+      makeClue('c6_600', 600, 'Placeholder clue text for 600 points in Watch & Guess.', 'Placeholder answer 3'),
+      makeClue('c6_800', 800, 'Placeholder clue text for 800 points in Watch & Guess.', 'Placeholder answer 4'),
+      makeClue('c6_1000', 1000, 'Placeholder clue text for 1000 points in Watch & Guess.', 'Placeholder answer 5'),
+  ]},
+];
+
+/* ============================================================
+   SOUND EFFECTS (synthesized — no external audio files)
+   ============================================================ */
+let audioCtx = null;
+function getCtx(){
+  if(!audioCtx){
+    try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ return null; }
+  }
+  return audioCtx;
+}
+function playTone(freq, duration, type, vol, delay){
+  const ctx = getCtx();
+  if(!ctx) return;
+  try{
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    gain.gain.value = vol || 0.2;
+    osc.connect(gain); gain.connect(ctx.destination);
+    const t0 = ctx.currentTime + (delay || 0);
+    osc.start(t0);
+    gain.gain.setValueAtTime(vol || 0.2, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+    osc.stop(t0 + duration + 0.02);
+  }catch(e){}
+}
+function sfxBuzz(){ playTone(880,0.12,'square',0.25,0); playTone(440,0.15,'square',0.2,0.05); }
+function sfxCorrect(){ playTone(523.25,0.12,'sine',0.22,0); playTone(659.25,0.12,'sine',0.22,0.12); playTone(783.99,0.2,'sine',0.22,0.24); }
+function sfxWrong(){ playTone(220,0.3,'sawtooth',0.22,0); playTone(160,0.35,'sawtooth',0.18,0.08); }
+function sfxSubmit(){ playTone(660,0.08,'sine',0.15,0); }
+function sfxJoin(){ playTone(494,0.1,'sine',0.18,0); playTone(659,0.12,'sine',0.18,0.1); }
+
+/* ============================================================
+   PEER-TO-PEER NETWORKING (PeerJS — no server of our own needed)
+   The host's browser tab IS the server for the duration of the game.
+   Room code -> a peer id on PeerJS's free public broker.
+   ============================================================ */
+const PEER_PREFIX = 'triviabd-';
+
+/* ============================================================
+   APP STATE
+   ============================================================ */
+const App = {
+  view: 'landing', // landing | host-board | player-join | player-play
+  roomCode: null,
+  peer: null,
+  hostConn: null,      // player's connection object to the host
+  connections: {},      // host-side: peerId -> { conn, name, teamId, role }
+  playerName: '',
+  playerTeam: null,
+  playerRole: 'player',  // 'player' | 'spectator'
+  joinPhase: 'enter-info', // enter-info | connecting | picking
+  joinError: '',
+  joinRoomInput: '',
+  joinNameInput: '',
+  state: null,       // shared LIVE game state (host is authoritative)
+  categories: null,   // board content, sent along with state
+  buzzList: [],        // host-side, current clue, in arrival order
+  answerList: [],
+  answerDraft: '',
+  myBuzzed: false,
+  mySubmitted: false,
+};
+
+function genRoomCode(){
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let s = '';
+  for(let i=0;i<4;i++) s += letters[Math.floor(Math.random()*letters.length)];
+  return s;
+}
+
+function defaultGameState(){
+  return {
+    teams: [
+      { id:'t1', name:'Team 1', color:'#F2B705', score:0 },
+      { id:'t2', name:'Team 2', color:'#3DA5D9', score:0 },
+      { id:'t3', name:'Team 3', color:'#E4572E', score:0 },
+      { id:'t4', name:'Team 4', color:'#5DD39E', score:0 },
+    ],
+    allowNoTeam: true,
+    mode: 'buzzer', // 'buzzer' | 'type'
+    usedClues: [],
+    currentCatId: null,
+    currentClueId: null,
+    buzzOpen: false,
+    submitOpen: false,
+    revealed: false,
+    lockedOut: [],
+    buzzOrderSummary: [],
+    answerOrderSummary: [],
+  };
+}
+
+function findCategory(catId){ return App.categories.find(c => c.id === catId); }
+function findClue(catId, clueId){
+  const cat = findCategory(catId);
+  if(!cat) return null;
+  return cat.clues.find(cl => cl.id === clueId);
+}
+function currentClue(){
+  if(!App.state || !App.state.currentClueId) return null;
+  return findClue(App.state.currentCatId, App.state.currentClueId);
+}
+
+/* ============================================================
+   HOST ACTIONS
+   ============================================================ */
+function hostCreateRoom(){
+  App.categories = DEFAULT_CATEGORIES;
+  App.state = defaultGameState();
+  App.connections = {};
+  tryCreateHostPeer(0);
+}
+
+function tryCreateHostPeer(attempt){
+  const code = genRoomCode();
+  const peer = new Peer(PEER_PREFIX + code);
+  peer.on('open', () => {
+    App.roomCode = code;
+    App.peer = peer;
+    App.view = 'host-board';
+    render();
+  });
+  peer.on('connection', (conn) => setupHostConnection(conn));
+  peer.on('disconnected', () => { try{ peer.reconnect(); }catch(e){} });
+  peer.on('error', (err) => {
+    if(err && err.type === 'unavailable-id' && attempt < 6){
+      peer.destroy();
+      tryCreateHostPeer(attempt + 1);
+    } else {
+      console.error('Peer error (host):', err);
+    }
+  });
+}
+
+function setupHostConnection(conn){
+  conn.on('open', () => {
+    // Send the current state right away so a joining screen can show
+    // real team names / settings before the player actually joins.
+    conn.send({ type:'state', state: App.state, categories: App.categories });
+  });
+  conn.on('data', (msg) => handleHostMessage(conn, msg));
+  conn.on('close', () => { delete App.connections[conn.peer]; render(); });
+}
+
+function sanitizeText(val, maxLen){
+  if(typeof val !== 'string') return '';
+  return val.trim().slice(0, maxLen);
+}
+
+function handleHostMessage(conn, msg){
+  if(!msg || !msg.type) return;
+
+  // Basic per-connection flood guard: ignore messages arriving faster than
+  // 150ms apart from the same peer, regardless of message type.
+  const now = Date.now();
+  if(conn._lastMsgAt && now - conn._lastMsgAt < 150) return;
+  conn._lastMsgAt = now;
+
+  if(msg.type === 'join'){
+    const name = sanitizeText(msg.name, 40) || 'Player';
+    const role = (msg.role === 'spectator') ? 'spectator' : 'player';
+    const validTeamIds = App.state.teams.map(t => t.id);
+    const teamId = (role === 'player' && validTeamIds.indexOf(msg.teamId) !== -1) ? msg.teamId : null;
+    App.connections[conn.peer] = { conn, name, teamId, role };
+    render();
+    broadcastState();
+    return;
+  }
+
+  const p = App.connections[conn.peer];
+  if(!p || p.role === 'spectator') return; // spectators can't buzz or answer
+
+  if(msg.type === 'buzz'){
+    if(!App.state.currentClueId || App.state.revealed) return;
+    if(App.buzzList.some(b => b.pid === conn.peer)) return;
+    App.buzzList.push({ pid: conn.peer, name: p.name, teamId: p.teamId });
+    if(App.buzzList.length === 1 && App.state.buzzOpen){
+      App.state.buzzOpen = false; // first-in locks the floor
+    }
+    App.state.buzzOrderSummary = App.buzzList.map(b => ({ pid:b.pid, name:b.name, teamId:b.teamId }));
+    sfxBuzz();
+    broadcastState();
+    render();
+  } else if(msg.type === 'answer'){
+    if(!App.state.currentClueId || App.state.revealed) return;
+    if(App.answerList.some(a => a.pid === conn.peer)) return;
+    const text = sanitizeText(msg.text, 300);
+    if(!text) return;
+    App.answerList.push({ pid: conn.peer, name: p.name, teamId: p.teamId, text });
+    App.state.answerOrderSummary = App.answerList.map(a => ({ pid:a.pid, name:a.name, teamId:a.teamId, text:a.text }));
+    broadcastState();
+    render();
+  }
+}
+
+function broadcastState(){
+  Object.keys(App.connections).forEach(pid => {
+    const c = App.connections[pid];
+    if(c.conn && c.conn.open) c.conn.send({ type:'state', state: App.state, categories: App.categories });
+  });
+}
+
+function hostOpenClue(catId, clueId){
+  App.state.currentCatId = catId;
+  App.state.currentClueId = clueId;
+  App.state.revealed = false;
+  App.state.lockedOut = [];
+  App.state.buzzOrderSummary = [];
+  App.state.answerOrderSummary = [];
+  App.state.buzzOpen = App.state.mode === 'buzzer';
+  App.state.submitOpen = App.state.mode === 'type';
+  App.buzzList = [];
+  App.answerList = [];
+  broadcastState();
+  render();
+}
+
+function hostToggleMode(){
+  if(App.state.currentClueId) return; // don't switch mid-clue
+  App.state.mode = App.state.mode === 'buzzer' ? 'type' : 'buzzer';
+  broadcastState();
+  render();
+}
+
+function hostToggleAllowNoTeam(){
+  App.state.allowNoTeam = !App.state.allowNoTeam;
+  broadcastState();
+  render();
+}
+
+function hostToggleBuzzOpen(){
+  App.state.buzzOpen = !App.state.buzzOpen;
+  broadcastState();
+  render();
+}
+
+function hostToggleSubmitOpen(){
+  App.state.submitOpen = !App.state.submitOpen;
+  broadcastState();
+  render();
+}
+
+function hostReveal(){
+  App.state.revealed = true;
+  broadcastState();
+  render();
+}
+
+function hostAward(teamId, delta){
+  const team = App.state.teams.find(t => t.id === teamId);
+  if(team) team.score += delta;
+  broadcastState();
+  render();
+}
+
+function hostMarkWrong(pid){
+  if(App.state.lockedOut.indexOf(pid) === -1) App.state.lockedOut.push(pid);
+  App.state.buzzOpen = true; // reopen the floor for remaining players
+  broadcastState();
+  render();
+}
+
+function hostRenameTeam(teamId, name){
+  const team = App.state.teams.find(t => t.id === teamId);
+  if(team) team.name = name;
+  broadcastState();
+}
+
+function hostCloseClue(){
+  if(App.state.currentClueId) App.state.usedClues.push(App.state.currentClueId);
+  App.state.currentCatId = null;
+  App.state.currentClueId = null;
+  App.state.buzzOpen = false;
+  App.state.submitOpen = false;
+  App.state.revealed = false;
+  App.state.lockedOut = [];
+  App.buzzList = [];
+  App.answerList = [];
+  broadcastState();
+  render();
+}
+
+/* ============================================================
+   PLAYER ACTIONS
+   ============================================================ */
+function playerConnect(){
+  App.joinError = '';
+  const code = (App.joinRoomInput || '').trim().toUpperCase();
+  const name = (App.joinNameInput || '').trim();
+  if(!code || code.length < 4){ App.joinError = 'Enter the 4-letter room code.'; render(); return; }
+  if(!name){ App.joinError = 'Enter your name.'; render(); return; }
+  App.playerName = name;
+  App.joinPhase = 'connecting';
+  render();
+
+  const peer = new Peer();
+  App.peer = peer;
+  peer.on('disconnected', () => { try{ peer.reconnect(); }catch(e){} });
+
+  peer.on('open', () => {
+    const conn = peer.connect(PEER_PREFIX + code, { reliable: true });
+    App.hostConn = conn;
+    let settled = false;
+    const failTimer = setTimeout(() => {
+      if(!settled){
+        settled = true;
+        App.joinPhase = 'enter-info';
+        App.joinError = "Couldn't reach a game with that room code.";
+        render();
+      }
+    }, 8000);
+    conn.on('open', () => { settled = true; clearTimeout(failTimer); App.roomCode = code; });
+    conn.on('data', (msg) => handlePlayerMessage(msg));
+    conn.on('close', () => { App.joinError = 'Lost connection to the host.'; render(); });
+    conn.on('error', () => {
+      if(!settled){
+        settled = true; clearTimeout(failTimer);
+        App.joinPhase = 'enter-info';
+        App.joinError = "Couldn't reach a game with that room code.";
+        render();
+      }
+    });
+  });
+  peer.on('error', (err) => {
+    if(err && err.type === 'peer-unavailable'){
+      App.joinPhase = 'enter-info';
+      App.joinError = "Couldn't find a game with that room code.";
+      render();
+    } else {
+      console.error('Peer error (player):', err);
+    }
+  });
+}
+
+function handlePlayerMessage(msg){
+  if(!msg || msg.type !== 'state') return;
+  const s = msg.state;
+  const clueChanged = !App.state || App.state.currentClueId !== s.currentClueId;
+  App.state = s;
+  App.categories = msg.categories || App.categories;
+  if(clueChanged){ App.myBuzzed = false; App.mySubmitted = false; App.answerDraft = ''; }
+  if(App.joinPhase === 'connecting'){ App.joinPhase = 'picking'; }
+  render();
+}
+
+function playerConfirmJoin(){
+  if(App.playerRole === 'player' && App.state.allowNoTeam === false && !App.playerTeam){
+    App.joinError = 'Please choose a team, or spectate instead.';
+    render();
+    return;
+  }
+  App.joinError = '';
+  App.hostConn.send({
+    type: 'join',
+    name: App.playerName,
+    teamId: App.playerRole === 'spectator' ? null : App.playerTeam,
+    role: App.playerRole,
+  });
+  sfxJoin();
+  App.view = 'player-play';
+  render();
+}
+
+function playerBuzz(){
+  if(App.myBuzzed) return;
+  App.myBuzzed = true;
+  render();
+  App.hostConn.send({ type:'buzz' });
+}
+
+function playerSubmitAnswer(){
+  if(App.mySubmitted || !App.answerDraft.trim()) return;
+  App.mySubmitted = true;
+  sfxSubmit();
+  render();
+  App.hostConn.send({ type:'answer', text: App.answerDraft.trim() });
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function el(html){ const d = document.createElement('div'); d.innerHTML = html; return d.firstElementChild; }
+
+function render(){
+  const root = document.getElementById('app');
+
+  // Re-rendering rebuilds the DOM from scratch, which would otherwise kick
+  // focus out of whatever input someone is typing in. Capture it here and
+  // restore it after, so typing survives a re-render.
+  const active = document.activeElement;
+  let focusInfo = null;
+  if(active && active.id && root.contains(active)){
+    focusInfo = { id: active.id, start: active.selectionStart, end: active.selectionEnd };
+  }
+
+  root.innerHTML = '';
+  let node;
+  if(App.view === 'landing') node = renderLanding();
+  else if(App.view === 'host-board') node = renderHostBoard();
+  else if(App.view === 'player-join') node = renderPlayerJoin();
+  else if(App.view === 'player-play') node = renderPlayerPlay();
+  else node = renderLanding();
+  root.appendChild(node);
+
+  if(focusInfo){
+    const restored = document.getElementById(focusInfo.id);
+    if(restored){
+      restored.focus();
+      if(typeof restored.setSelectionRange === 'function' && focusInfo.start != null){
+        try{ restored.setSelectionRange(focusInfo.start, focusInfo.end); }catch(e){}
+      }
+    }
+  }
+}
+
+function renderLanding(){
+  const wrap = el(`
+    <div class="landing">
+      <div>
+        <h1 class="marquee-title">TRIVIA NIGHT</h1>
+        <p class="marquee-sub">Host a board or join a room already in play.</p>
+      </div>
+      <div class="role-buttons">
+        <button class="big-btn" id="btn-host">Host a Game</button>
+        <button class="big-btn secondary" id="btn-join">Join a Game</button>
+      </div>
+    </div>
+  `);
+  wrap.querySelector('#btn-host').onclick = () => { hostCreateRoom(); };
+  wrap.querySelector('#btn-join').onclick = () => {
+    App.view = 'player-join';
+    App.joinPhase = 'enter-info';
+    App.joinError = '';
+    App.playerRole = 'player';
+    App.playerTeam = null;
+    render();
+  };
+  return wrap;
+}
+
+function renderPlayerJoin(){
+  const wrap = el(`
+    <div class="landing">
+      <h1 class="marquee-title" style="font-size:32px;">JOIN GAME</h1>
+      <div class="panel" id="join-panel"></div>
+    </div>
+  `);
+  const panel = wrap.querySelector('#join-panel');
+
+  if(App.joinPhase === 'connecting'){
+    panel.appendChild(el(`<div class="hint-text" style="text-align:center;">Connecting to room ${escapeHtml((App.joinRoomInput||'').toUpperCase())}&hellip;</div>`));
+    return wrap;
+  }
+
+  if(App.joinPhase === 'picking' && App.state){
+    const teams = App.state.teams;
+    const allowNoTeam = App.state.allowNoTeam !== false;
+    const picker = el(`
+      <div>
+        <div class="field">
+          <label>Team</label>
+          <div class="team-grid" id="team-grid">
+            ${teams.map(t => `<button type="button" class="team-pick" data-role="player" data-team="${t.id}" style="border-color:${(App.playerRole==='player'&&App.playerTeam===t.id)?'var(--marquee-gold)':'transparent'}">${escapeHtml(t.name)}</button>`).join('')}
+            ${allowNoTeam ? `<button type="button" class="team-pick no-team" data-role="player" data-team="" style="border-color:${(App.playerRole==='player'&&!App.playerTeam)?'var(--marquee-gold)':'transparent'}">Play without a team</button>` : ''}
+            <button type="button" class="team-pick no-team" data-role="spectator" data-team="" style="border-color:${App.playerRole==='spectator'?'var(--marquee-gold)':'transparent'}">Just spectate</button>
+          </div>
+        </div>
+        ${App.joinError ? `<div class="error-text">${escapeHtml(App.joinError)}</div>` : ''}
+        <button class="big-btn" id="btn-confirm-join" style="width:100%;">Join</button>
+      </div>
+    `);
+    picker.querySelectorAll('.team-pick').forEach(btn => {
+      btn.onclick = () => {
+        App.playerRole = btn.dataset.role;
+        App.playerTeam = btn.dataset.role === 'spectator' ? null : (btn.dataset.team || null);
+        render();
+      };
+    });
+    picker.querySelector('#btn-confirm-join').onclick = () => playerConfirmJoin();
+    panel.appendChild(picker);
+    return wrap;
+  }
+
+  panel.appendChild(el(`
+    <div>
+      <div class="field">
+        <label>Room Code</label>
+        <input id="in-code" maxlength="4" placeholder="ABCD" autocomplete="off" style="text-transform:uppercase;letter-spacing:3px;font-family:var(--font-display);">
+      </div>
+      <div class="field">
+        <label>Your Name</label>
+        <input id="in-name" placeholder="e.g. Jordan" autocomplete="off">
+      </div>
+      ${App.joinError ? `<div class="error-text">${escapeHtml(App.joinError)}</div>` : ''}
+      <button class="big-btn" id="btn-do-connect" style="width:100%;">Connect</button>
+      <div class="hint-text" style="margin-top:12px;">Ask your host for the room code — it's shown at the top of their screen.</div>
+    </div>
+  `));
+  panel.querySelector('#in-code').value = App.joinRoomInput;
+  panel.querySelector('#in-code').oninput = (e) => { App.joinRoomInput = e.target.value; };
+  panel.querySelector('#in-name').value = App.joinNameInput;
+  panel.querySelector('#in-name').oninput = (e) => { App.joinNameInput = e.target.value; };
+  panel.querySelector('#btn-do-connect').onclick = () => playerConnect();
+  return wrap;
+}
+
+function teamColor(teamId){
+  if(!teamId || !App.state) return '#8892A6';
+  const t = App.state.teams.find(x => x.id === teamId);
+  return t ? t.color : '#8892A6';
+}
+function teamName(teamId){
+  if(!teamId) return 'No team';
+  if(!App.state) return '';
+  const t = App.state.teams.find(x => x.id === teamId);
+  return t ? t.name : 'No team';
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderHostBoard(){
+  const s = App.state;
+  const wrap = el(`<div class="player-wrap"></div>`);
+
+  const connKeys = Object.keys(App.connections);
+  const playerCount = connKeys.filter(k => App.connections[k].role !== 'spectator').length;
+  const spectatorCount = connKeys.length - playerCount;
+
+  const topbar = el(`
+    <div class="host-topbar">
+      <div class="room-chip">
+        <div>
+          <div class="label">Room Code</div>
+          <div class="code">${App.roomCode || ''}</div>
+        </div>
+      </div>
+      <div class="topbar-controls">
+        <div class="toggle-row">
+          <span>Buzzer</span>
+          <div class="toggle ${s.mode==='type' ? 'on' : ''}" id="mode-toggle"><div class="knob"></div></div>
+          <span>Type Answer</span>
+        </div>
+        <div class="toggle-row">
+          <span>Require team</span>
+          <div class="toggle ${s.allowNoTeam ? '' : 'on'}" id="noteam-toggle"><div class="knob"></div></div>
+          <span>Allow no team</span>
+        </div>
+        <div class="hint-text">${playerCount} playing &middot; ${spectatorCount} spectating</div>
+      </div>
+    </div>
+  `);
+  topbar.querySelector('#mode-toggle').onclick = () => hostToggleMode();
+  topbar.querySelector('#noteam-toggle').onclick = () => hostToggleAllowNoTeam();
+  wrap.appendChild(topbar);
+
+  const scoreboard = el(`<div class="scoreboard"></div>`);
+  s.teams.forEach(t => {
+    const pill = el(`
+      <div class="team-pill">
+        <div class="team-dot" style="background:${t.color}"></div>
+        <input value="${escapeHtml(t.name)}" data-team="${t.id}">
+        <div class="tscore">${t.score}</div>
+      </div>
+    `);
+    pill.querySelector('input').onchange = (e) => hostRenameTeam(t.id, e.target.value);
+    scoreboard.appendChild(pill);
+  });
+  wrap.appendChild(scoreboard);
+
+  if(connKeys.length){
+    const groups = {};
+    const spectators = [];
+    connKeys.forEach(k => {
+      const p = App.connections[k];
+      if(p.role === 'spectator'){ spectators.push(p.name); return; }
+      const tid = p.teamId || '__none';
+      if(!groups[tid]) groups[tid] = [];
+      groups[tid].push(p.name);
+    });
+    const rosterEl = el(`<div class="roster-strip"><div class="roster-groups"></div></div>`);
+    const groupsWrap = rosterEl.querySelector('.roster-groups');
+    Object.keys(groups).forEach(tid => {
+      const label = tid === '__none' ? 'No team' : teamName(tid);
+      groupsWrap.appendChild(el(`
+        <div class="roster-group">
+          <h4>${escapeHtml(label)}</h4>
+          <ul>${groups[tid].map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>
+        </div>
+      `));
+    });
+    if(spectators.length){
+      groupsWrap.appendChild(el(`
+        <div class="roster-group">
+          <h4>Spectating</h4>
+          <ul>${spectators.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>
+        </div>
+      `));
+    }
+    wrap.appendChild(rosterEl);
+  }
+
+  const boardWrap = el(`<div class="board-wrap"><div class="board"></div></div>`);
+  const board = boardWrap.querySelector('.board');
+  App.categories.forEach(cat => {
+    board.appendChild(el(`<div class="cat-header">${escapeHtml(cat.name)}</div>`));
+  });
+  const maxRows = Math.max(...App.categories.map(c => c.clues.length));
+  for(let r=0; r<maxRows; r++){
+    App.categories.forEach(cat => {
+      const clue = cat.clues[r];
+      if(!clue){ board.appendChild(el(`<div></div>`)); return; }
+      const used = s.usedClues.indexOf(clue.id) !== -1;
+      const tile = el(`<div class="clue-tile ${used?'used':''}">${used ? '' : '$'+clue.value}</div>`);
+      if(!used){ tile.onclick = () => hostOpenClue(cat.id, clue.id); }
+      board.appendChild(tile);
+    });
+  }
+  wrap.appendChild(boardWrap);
+
+  if(s.currentClueId){
+    wrap.appendChild(renderHostClueOverlay());
+  }
+
+  return wrap;
+}
+
+function renderHostClueOverlay(){
+  const s = App.state;
+  const clue = currentClue();
+  const cat = findCategory(s.currentCatId);
+  const overlay = el(`
+    <div class="overlay">
+      <div class="overlay-top">
+        <div class="overlay-cat">${escapeHtml(cat.name)}</div>
+        <div class="overlay-value">$${clue.value}</div>
+        <button class="small-btn" id="btn-close-clue">Close</button>
+      </div>
+      <div class="overlay-body">
+        <div class="clue-text">${escapeHtml(clue.clue)}</div>
+        ${clue.media ? `<div class="clue-media">${clue.media.type==='video' ? `<video src="${clue.media.url}" controls autoplay muted></video>` : `<img src="${clue.media.url}">`}</div>` : ''}
+        ${s.revealed ? `<div class="answer-reveal">${escapeHtml(clue.answer)}</div>` : ''}
+        ${s.mode === 'buzzer' ? renderBuzzFeed() : renderAnswerFeed()}
+      </div>
+      <div class="overlay-controls">
+        <div class="control-row">
+          ${s.mode === 'buzzer'
+            ? `<button class="small-btn" id="btn-toggle-buzz">${s.buzzOpen ? 'Lock Buzzers' : 'Open Buzzers'}</button>`
+            : `<button class="small-btn" id="btn-toggle-submit">${s.submitOpen ? 'Close Submissions' : 'Open Submissions'}</button>`}
+          ${!s.revealed ? `<button class="small-btn" id="btn-reveal">Reveal Answer</button>` : ''}
+          <button class="small-btn danger" id="btn-close-clue-2">Close Clue</button>
+        </div>
+      </div>
+    </div>
+  `);
+  overlay.querySelector('#btn-close-clue').onclick = () => hostCloseClue();
+  overlay.querySelector('#btn-close-clue-2').onclick = () => hostCloseClue();
+  const revealBtn = overlay.querySelector('#btn-reveal');
+  if(revealBtn) revealBtn.onclick = () => hostReveal();
+  const toggleBuzz = overlay.querySelector('#btn-toggle-buzz');
+  if(toggleBuzz) toggleBuzz.onclick = () => hostToggleBuzzOpen();
+  const toggleSubmit = overlay.querySelector('#btn-toggle-submit');
+  if(toggleSubmit) toggleSubmit.onclick = () => hostToggleSubmitOpen();
+
+  overlay.querySelectorAll('.mini-btn.correct').forEach(b => {
+    b.onclick = () => { sfxCorrect(); hostAward(b.dataset.team, parseInt(b.dataset.value,10)); hostCloseClue(); };
+  });
+  overlay.querySelectorAll('.mini-btn.wrong').forEach(b => {
+    b.onclick = () => { sfxWrong(); hostAward(b.dataset.team, -parseInt(b.dataset.value,10)); hostMarkWrong(b.dataset.pid); };
+  });
+  return overlay;
+}
+
+function renderBuzzFeed(){
+  const s = App.state;
+  const clue = currentClue();
+  if(!App.buzzList.length) return `<div class="buzz-feed"><div class="feed-empty">No buzz-ins yet.</div></div>`;
+  return `<div class="buzz-feed">${App.buzzList.map((b,i) => {
+    const locked = s.lockedOut.indexOf(b.pid) !== -1;
+    return `
+      <div class="feed-row ${locked?'locked':''}">
+        <div class="feed-rank">#${i+1}</div>
+        <div class="feed-name">${escapeHtml(b.name)}<div class="feed-team">${escapeHtml(teamName(b.teamId))}</div></div>
+        ${!locked ? `
+          <div class="feed-actions">
+            <button class="mini-btn correct" data-team="${escapeHtml(b.teamId||'')}" data-value="${clue.value}">Correct</button>
+            <button class="mini-btn wrong" data-team="${escapeHtml(b.teamId||'')}" data-value="${clue.value}" data-pid="${escapeHtml(b.pid)}">Wrong</button>
+          </div>` : `<div class="hint-text">locked out</div>`}
+      </div>`;
+  }).join('')}</div>`;
+}
+
+function renderAnswerFeed(){
+  const clue = currentClue();
+  if(!App.answerList.length) return `<div class="answer-feed"><div class="feed-empty">No answers submitted yet.</div></div>`;
+  return `<div class="answer-feed">${App.answerList.map((a,i) => `
+    <div class="feed-row">
+      <div class="feed-rank">#${i+1}</div>
+      <div class="feed-name">${escapeHtml(a.name)}<div class="feed-team">${escapeHtml(teamName(a.teamId))}</div></div>
+      <div class="feed-answer-text">${escapeHtml(a.text)}</div>
+      <div class="feed-actions">
+        <button class="mini-btn correct" data-team="${escapeHtml(a.teamId||'')}" data-value="${clue.value}">Correct</button>
+        <button class="mini-btn wrong" data-team="${escapeHtml(a.teamId||'')}" data-value="${clue.value}" data-pid="${escapeHtml(a.pid)}">Wrong</button>
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+function renderPlayerPlay(){
+  const s = App.state;
+  const wrap = el(`<div class="player-wrap"></div>`);
+  const myTeam = App.playerTeam;
+  const isSpectator = App.playerRole === 'spectator';
+
+  wrap.appendChild(el(`
+    <div class="player-status-bar">
+      <span>${escapeHtml(App.playerName)} &middot; ${isSpectator ? 'Spectating' : escapeHtml(teamName(myTeam))}</span>
+      <span>Room ${App.roomCode}</span>
+    </div>
+  `));
+
+  const scoreboard = el(`<div class="scoreboard"></div>`);
+  s.teams.forEach(t => {
+    scoreboard.appendChild(el(`
+      <div class="team-pill">
+        <div class="team-dot" style="background:${t.color}"></div>
+        <span class="tname">${escapeHtml(t.name)}</span>
+        <div class="tscore">${t.score}</div>
+      </div>
+    `));
+  });
+  wrap.appendChild(scoreboard);
+
+  const main = el(`<div class="player-main"></div>`);
+
+  if(!s.currentClueId){
+    main.appendChild(el(`<div class="waiting-pulse">Waiting for the host to open a clue&hellip;</div>`));
+  } else {
+    const clue = currentClue();
+    main.appendChild(el(`<div class="clue-text">${escapeHtml(clue.clue)}</div>`));
+    if(clue.media){
+      main.appendChild(el(`<div class="clue-media">${clue.media.type==='video' ? `<video src="${clue.media.url}" controls></video>` : `<img src="${clue.media.url}">`}</div>`));
+    }
+    if(s.revealed){
+      main.appendChild(el(`<div class="answer-reveal">${escapeHtml(clue.answer)}</div>`));
+    } else if(isSpectator){
+      let msg;
+      if(s.mode === 'buzzer'){
+        msg = (s.buzzOrderSummary && s.buzzOrderSummary.length) ? 'Watching — someone has buzzed in.' : (s.buzzOpen ? 'Watching — buzzers are open.' : 'Watching — buzzers are locked.');
+      } else {
+        msg = s.submitOpen ? 'Watching — answers are open.' : 'Watching — waiting on the host.';
+      }
+      main.appendChild(el(`<div class="hint-text">${msg}</div>`));
+    } else if(s.mode === 'buzzer'){
+      const myId = App.peer ? App.peer.id : '';
+      const amLocked = s.lockedOut.indexOf(myId) !== -1;
+      const myRank = (s.buzzOrderSummary || []).findIndex(b => b.pid === myId);
+      if(myRank !== -1){
+        main.appendChild(el(`<div class="buzz-rank-msg">You buzzed in #${myRank+1}${myRank===0 ? ' — go!' : ' — waiting your turn'}</div>`));
+      } else {
+        const btn = el(`<button class="buzzer-btn" ${(!s.buzzOpen || amLocked) ? 'disabled' : ''}>${amLocked ? 'LOCKED' : 'BUZZ'}</button>`);
+        btn.onclick = () => playerBuzz();
+        main.appendChild(btn);
+        if(!s.buzzOpen && !amLocked) main.appendChild(el(`<div class="hint-text">Buzzers are locked right now.</div>`));
+      }
+    } else {
+      if(App.mySubmitted){
+        main.appendChild(el(`<div class="buzz-rank-msg">Answer submitted &mdash; waiting on the host.</div>`));
+      } else if(!s.submitOpen){
+        main.appendChild(el(`<div class="hint-text">Waiting for the host to open answers&hellip;</div>`));
+      } else {
+        const box = el(`
+          <div class="answer-box">
+            <textarea id="answer-textarea" placeholder="Type your answer&hellip;"></textarea>
+            <button class="big-btn" id="btn-submit-answer">Submit Answer</button>
+          </div>
+        `);
+        const ta = box.querySelector('textarea');
+        ta.value = App.answerDraft;
+        ta.oninput = (e) => { App.answerDraft = e.target.value; };
+        box.querySelector('#btn-submit-answer').onclick = () => playerSubmitAnswer();
+        main.appendChild(box);
+      }
+    }
+  }
+
+  wrap.appendChild(main);
+  return wrap;
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+render();
+</script>
+</body>
+</html>
