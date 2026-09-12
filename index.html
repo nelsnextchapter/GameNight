@@ -1019,6 +1019,16 @@ function renderRosterDrawer(connKeys, playerCount, spectatorCount){
     }
   });
 
+  // Anyone who's scored moves to the top, highest first; everyone still at
+  // zero stays below in the order they joined (Array.sort is stable, so a
+  // zero-vs-zero comparison leaves their original order untouched).
+  noTeamList.sort((a, b) => {
+    if(a.score === 0 && b.score === 0) return 0;
+    if(a.score === 0) return 1;
+    if(b.score === 0) return -1;
+    return b.score - a.score;
+  });
+
   const drawer = el(`
     <div class="roster-drawer ${App.rosterPanelOpen ? 'open' : ''}">
       <div class="roster-drawer-header">
