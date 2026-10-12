@@ -300,8 +300,17 @@
   .roster-group ul{ list-style:none; margin:0; padding:0; font-size:13px; }
   .roster-group li{ padding:2px 0; }
 
+  /* Read-only board for players & spectators */
+  .board.readonly .clue-tile{ cursor:default; }
+  .board.readonly .clue-tile:hover{ transform:none; filter:none; }
+  .board-waiting{ text-align:center; color: var(--muted); font-size:14px; margin-bottom:12px; }
+
+  /* Phones: keep all 6 columns lined up (just smaller) so categories stay above their own amounts */
   @media (max-width:720px){
-    .board{ grid-template-columns: repeat(3,1fr); }
+    .board-wrap{ padding: 12px 8px 20px; }
+    .board{ gap:4px; }
+    .cat-header{ font-size:9px; padding:6px 3px; min-height:46px; letter-spacing:0; word-break:break-word; }
+    .clue-tile{ font-size:13px; min-height:44px; }
   }
 </style>
 </head>
@@ -497,7 +506,20 @@ function findClue(catId, clueId){
 }
 function currentClue(){
   if(!App.state || !App.state.currentClueId) return null;
-  return findClue(App.state.currentCatId, App.state.currentClueId);
+  if(App.view === 'host-board') return findClue(App.state.currentCatId, App.state.currentClueId);
+  // Players only ever receive the clue that's open, and the answer only once it's revealed.
+  const d = App.state.clueData;
+  if(!d) return null;
+  return { clue: d.clue, media: d.media, value: d.value, answer: App.state.answerData || '' };
+}
+
+// What players get for the board: category names and dollar amounts only —
+// no clue text or answers ahead of time.
+function publicCategories(){
+  return App.categories.map(c => ({
+    id: c.id, name: c.name,
+    clues: c.clues.map(cl => ({ id: cl.id, value: cl.value })),
+  }));
 }
 
 /* ============================================================
@@ -557,7 +579,7 @@ function setupHostConnection(conn){
   conn.on('open', () => {
     // Send the current state right away so a joining screen can show
     // real team names / settings before the player actually joins.
-    conn.send({ type:'state', state: stateForSend(), categories: App.categories });
+    conn.send({ type:'state', state: stateForSend(), categories: publicCategories() });
   });
   conn.on('data', (msg) => handleHostMessage(conn, msg));
   conn.on('close', () => { delete App.connections[conn.peer]; render(); });
@@ -625,11 +647,16 @@ function handleHostMessage(conn, msg){
 function stateForSend(){
   const s = App.state;
   s.timerRemainingMs = s.timerRunning ? Math.max(0, App.timerLocalEnd - Date.now()) : 0;
+  const clue = s.currentClueId ? findClue(s.currentCatId, s.currentClueId) : null;
+  // During a Daily Double, the clue stays hidden from players until the wager is in.
+  const showClue = clue && (!s.isDailyDouble || s.ddPhase === 'clue');
+  s.clueData = showClue ? { clue: clue.clue, media: clue.media, value: clue.value } : null;
+  s.answerData = (clue && s.revealed) ? clue.answer : null;
   return s;
 }
 
 function broadcastState(){
-  const payload = { type:'state', state: stateForSend(), categories: App.categories };
+  const payload = { type:'state', state: stateForSend(), categories: publicCategories() };
   Object.keys(App.connections).forEach(pid => {
     const c = App.connections[pid];
     if(c.conn && c.conn.open) c.conn.send(payload);
@@ -1650,6 +1677,31 @@ function renderAnswerFeed(){
     </div>`).join('')}</div>`;
 }
 
+// Same board the host sees, minus everything host-only (no Daily Double stars,
+// no clicking). Picked tiles go blank as the game goes on.
+function renderPlayerBoard(){
+  const s = App.state;
+  const cats = App.categories || [];
+  const boardWrap = el(`
+    <div class="board-wrap">
+      <div class="board-waiting">Waiting for the host to pick a clue&hellip;</div>
+      <div class="board readonly"></div>
+    </div>
+  `);
+  const board = boardWrap.querySelector('.board');
+  cats.forEach(cat => board.appendChild(el(`<div class="cat-header">${escapeHtml(cat.name)}</div>`)));
+  const maxRows = cats.length ? Math.max(...cats.map(c => c.clues.length)) : 0;
+  for(let r = 0; r < maxRows; r++){
+    cats.forEach(cat => {
+      const clue = cat.clues[r];
+      if(!clue){ board.appendChild(el(`<div></div>`)); return; }
+      const used = (s.usedClues || []).indexOf(clue.id) !== -1;
+      board.appendChild(el(`<div class="clue-tile ${used ? 'used' : ''}">${used ? '' : '$' + clue.value}</div>`));
+    });
+  }
+  return boardWrap;
+}
+
 function renderPlayerPlay(){
   const s = App.state;
   const wrap = el(`<div class="player-wrap"></div>`);
@@ -1678,7 +1730,8 @@ function renderPlayerPlay(){
   const main = el(`<div class="player-main"></div>`);
 
   if(!s.currentClueId){
-    main.appendChild(el(`<div class="waiting-pulse">Waiting for the host to open a clue&hellip;</div>`));
+    wrap.appendChild(renderPlayerBoard());
+    return wrap;
   } else {
     const clue = currentClue();
 
