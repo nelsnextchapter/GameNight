@@ -419,12 +419,24 @@ function sfxTimeUp(){ playTone(330,0.18,'square',0.2,0); playTone(330,0.18,'squa
    Room code -> a peer id on PeerJS's free public broker.
    ============================================================ */
 const PEER_PREFIX = 'triviabd-';
+// Bump this whenever the file changes, so host and players can tell if someone
+// is running an old copy (e.g. a tab left open from before an update).
+const APP_VERSION = 6;
+
+/* ============================================================
+   HOST PASSWORD — change the text between the quotes to set it.
+   (This keeps players from clicking "Host a Game". It is not
+   hidden from someone who opens View Page Source.)
+   ============================================================ */
+const HOST_PASSWORD = 'changeme';
 
 /* ============================================================
    APP STATE
    ============================================================ */
 const App = {
-  view: 'landing', // landing | host-board | player-join | player-play
+  view: 'landing', // landing | host-login | host-board | player-join | player-play
+  hostPwInput: '',
+  hostPwError: '',
   roomCode: null,
   peer: null,
   hostConn: null,      // player's connection object to the host
@@ -509,8 +521,11 @@ function currentClue(){
   if(App.view === 'host-board') return findClue(App.state.currentCatId, App.state.currentClueId);
   // Players only ever receive the clue that's open, and the answer only once it's revealed.
   const d = App.state.clueData;
-  if(!d) return null;
-  return { clue: d.clue, media: d.media, value: d.value, answer: App.state.answerData || '' };
+  if(d) return { clue: d.clue, media: d.media, value: d.value, answer: App.state.answerData || '' };
+  // Older host copies sent the whole board instead — use it if that's what we got.
+  const full = findClue(App.state.currentCatId, App.state.currentClueId);
+  if(full && typeof full.clue === 'string') return full;
+  return null;
 }
 
 // What players get for the board: category names and dollar amounts only —
@@ -604,7 +619,7 @@ function handleHostMessage(conn, msg){
     const role = (msg.role === 'spectator') ? 'spectator' : 'player';
     const validTeamIds = App.state.teams.map(t => t.id);
     const teamId = (role === 'player' && validTeamIds.indexOf(msg.teamId) !== -1) ? msg.teamId : null;
-    App.connections[conn.peer] = { conn, name, teamId, role, score: 0 };
+    App.connections[conn.peer] = { conn, name, teamId, role, score: 0, outdated: msg.v !== APP_VERSION };
     render();
     broadcastState();
     return;
@@ -652,6 +667,7 @@ function stateForSend(){
   const showClue = clue && (!s.isDailyDouble || s.ddPhase === 'clue');
   s.clueData = showClue ? { clue: clue.clue, media: clue.media, value: clue.value } : null;
   s.answerData = (clue && s.revealed) ? clue.answer : null;
+  s.appVersion = APP_VERSION;
   return s;
 }
 
@@ -1034,6 +1050,7 @@ function playerConfirmJoin(){
     name: App.playerName,
     teamId: App.playerRole === 'spectator' ? null : App.playerTeam,
     role: App.playerRole,
+    v: APP_VERSION,
   });
   sfxJoin();
   App.view = 'player-play';
@@ -1079,11 +1096,20 @@ function render(){
 
   root.innerHTML = '';
   let node;
-  if(App.view === 'landing') node = renderLanding();
-  else if(App.view === 'host-board') node = renderHostBoard();
-  else if(App.view === 'player-join') node = renderPlayerJoin();
-  else if(App.view === 'player-play') node = renderPlayerPlay();
-  else node = renderLanding();
+  try{
+    if(App.view === 'landing') node = renderLanding();
+    else if(App.view === 'host-login') node = renderHostLogin();
+    else if(App.view === 'host-board') node = renderHostBoard();
+    else if(App.view === 'player-join') node = renderPlayerJoin();
+    else if(App.view === 'player-play') node = renderPlayerPlay();
+    else node = renderLanding();
+  }catch(err){
+    console.error('Render error:', err);
+    node = el(`<div class="landing"><div class="panel" style="text-align:center;">
+      <div style="font-weight:800;margin-bottom:8px;">Something went wrong showing this screen.</div>
+      <div class="hint-text">It'll try again on the next update. If it stays like this, refresh the page and rejoin with the same room code.</div>
+    </div></div>`);
+  }
   root.appendChild(node);
 
   const newVideo = root.querySelector('.clue-media video');
@@ -1147,6 +1173,7 @@ function renderLanding(){
       <div>
         <h1 class="marquee-title">GAME NIGHT</h1>
         <p class="marquee-sub">Host a board or join a room already in play.</p>
+        <p class="hint-text" style="opacity:0.6;">Version ${APP_VERSION}</p>
       </div>
       <div class="role-buttons">
         <button class="big-btn" id="btn-host">Host a Game</button>
@@ -1154,7 +1181,7 @@ function renderLanding(){
       </div>
     </div>
   `);
-  wrap.querySelector('#btn-host').onclick = () => { hostCreateRoom(); };
+  wrap.querySelector('#btn-host').onclick = () => { App.view = 'host-login'; App.hostPwError = ''; App.hostPwInput = ''; render(); };
   wrap.querySelector('#btn-join').onclick = () => {
     App.view = 'player-join';
     App.joinPhase = 'enter-info';
@@ -1163,6 +1190,44 @@ function renderLanding(){
     App.playerTeam = null;
     render();
   };
+  return wrap;
+}
+
+function hostTryLogin(){
+  if((App.hostPwInput || '') === HOST_PASSWORD){
+    App.hostPwError = '';
+    App.hostPwInput = '';
+    hostCreateRoom();
+  } else {
+    App.hostPwError = 'Incorrect password.';
+    App.hostPwInput = '';
+    render();
+  }
+}
+
+function renderHostLogin(){
+  const wrap = el(`
+    <div class="landing">
+      <h1 class="marquee-title" style="font-size:32px;">HOST A GAME</h1>
+      <div class="panel">
+        <div class="field">
+          <label>Host password</label>
+          <input id="in-host-pw" type="password" autocomplete="current-password" placeholder="Enter the host password">
+        </div>
+        ${App.hostPwError ? `<div class="error-text">${escapeHtml(App.hostPwError)}</div>` : ''}
+        <button class="big-btn" id="btn-host-login" style="width:100%;margin-top:6px;">Continue</button>
+        <button class="big-btn secondary" id="btn-host-back" style="width:100%;margin-top:10px;">Back</button>
+        <div class="hint-text" style="margin-top:12px;">Here to play? Go back and choose "Join a Game."</div>
+      </div>
+    </div>
+  `);
+  const input = wrap.querySelector('#in-host-pw');
+  input.value = App.hostPwInput;
+  input.oninput = (e) => { App.hostPwInput = e.target.value; };
+  input.onkeydown = (e) => { if(e.key === 'Enter') hostTryLogin(); };
+  wrap.querySelector('#btn-host-login').onclick = () => hostTryLogin();
+  wrap.querySelector('#btn-host-back').onclick = () => { App.view = 'landing'; App.hostPwError = ''; render(); };
+  setTimeout(() => { const i = document.getElementById('in-host-pw'); if(i) i.focus(); }, 0);
   return wrap;
 }
 
@@ -1430,12 +1495,13 @@ function renderRosterDrawer(connKeys, playerCount, spectatorCount){
   const spectators = [];
   connKeys.forEach(k => {
     const p = App.connections[k];
-    if(p.role === 'spectator'){ spectators.push(p.name); return; }
+    const label = p.outdated ? p.name + ' \u26A0 old version, ask them to refresh' : p.name;
+    if(p.role === 'spectator'){ spectators.push(label); return; }
     if(p.teamId){
       if(!groups[p.teamId]) groups[p.teamId] = [];
-      groups[p.teamId].push(p.name);
+      groups[p.teamId].push(label);
     } else {
-      noTeamList.push({ name: p.name, score: p.score || 0 });
+      noTeamList.push({ name: label, score: p.score || 0 });
     }
   });
 
@@ -1714,6 +1780,11 @@ function renderPlayerPlay(){
       <span>Room ${App.roomCode}</span>
     </div>
   `));
+  if(s.appVersion !== APP_VERSION){
+    wrap.appendChild(el(`<div class="pick-banner" style="border-color:rgba(214,69,69,0.6);background:rgba(214,69,69,0.15);">
+      <span>The host's game page is out of date. Ask the host to refresh their page (and start a new room) so everyone is on the same version.</span>
+    </div>`));
+  }
 
   const scoreboard = el(`<div class="scoreboard"></div>`);
   s.teams.forEach(t => {
@@ -1742,6 +1813,12 @@ function renderPlayerPlay(){
       } else {
         main.appendChild(el(`<div class="hint-text">${escapeHtml(s.ddAnswerer ? s.ddAnswerer.label : '')} is wagering&hellip;</div>`));
       }
+      wrap.appendChild(main);
+      return wrap;
+    }
+
+    if(!clue){
+      main.appendChild(el(`<div class="waiting-pulse">Loading the clue&hellip;</div>`));
       wrap.appendChild(main);
       return wrap;
     }
