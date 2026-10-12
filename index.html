@@ -253,6 +253,48 @@
   .roster-drawer.open{ transform: translateX(0); }
   .roster-drawer-header{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:18px; }
   .roster-drawer-header h3{ margin:0; font-family: var(--font-body); font-weight:800; font-size:14px; color: var(--muted); }
+
+  /* ---------- Settings drawer (slides in from the left) ---------- */
+  .settings-drawer{
+    left:0; right:auto; width:340px;
+    border-left:none; border-right:1px solid rgba(255,255,255,0.08);
+    transform: translateX(-100%); box-shadow: 10px 0 26px rgba(0,0,0,0.4);
+  }
+  .settings-drawer h3{ color: var(--spark-white); font-size:18px; }
+  .setting{ padding:16px 0; border-bottom:1px solid rgba(255,255,255,0.08); }
+  .setting:last-child{ border-bottom:none; }
+  .setting-head{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
+  .setting-title{ font-weight:800; font-size:14px; }
+  .setting-desc{ font-size:12px; color: var(--muted); margin-top:6px; line-height:1.45; }
+  .setting .toggle-row{ font-size:12px; }
+  .setting-input{
+    width:80px; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.06); color: var(--spark-white); font-size:15px; font-weight:700;
+  }
+  .setting-input:disabled{ opacity:0.4; }
+  .status-line{ font-size:12px; color: var(--muted); }
+
+  .pick-banner{
+    margin: 12px 22px 0; padding:12px 16px; border-radius:10px;
+    background: rgba(242,183,5,0.12); border:1px solid rgba(242,183,5,0.4);
+    display:flex; justify-content:space-between; align-items:center; gap:12px; font-size:14px;
+  }
+
+  /* ---------- Answer timer ---------- */
+  .timer-display{ width:100%; max-width:420px; text-align:center; }
+  .timer-label{ font-size:13px; color: var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:4px; }
+  .timer-count{ font-family: var(--font-display); font-size: clamp(36px,7vw,56px); color: var(--marquee-gold); line-height:1; }
+  .timer-bar{ height:8px; border-radius:6px; background: rgba(255,255,255,0.1); margin-top:10px; overflow:hidden; }
+  .timer-fill{ height:100%; background: var(--marquee-gold); border-radius:6px; transition: width .2s linear; }
+  .timer-display.low .timer-count{ color: var(--wrong-red); }
+  .timer-display.low .timer-fill{ background: var(--wrong-red); }
+  .timer-display.expired .timer-count{ color: var(--wrong-red); font-size: clamp(28px,5vw,40px); }
+
+  .correct-by{ font-size:16px; font-weight:700; color: var(--spark-white); text-align:center; }
+  .judged-badge{ font-size:12px; font-weight:800; padding:4px 10px; border-radius:6px; }
+  .judged-badge.correct{ background: rgba(47,168,79,0.2); color:#8EE6A6; }
+  .judged-badge.wrong{ background: rgba(214,69,69,0.2); color:#FFB3B3; }
+  .unlock-btn{ min-width:240px; }
   .roster-group{ min-width:140px; }
   .roster-group h4{ margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); }
   .roster-group ul{ list-style:none; margin:0; padding:0; font-size:13px; }
@@ -359,6 +401,8 @@ function sfxCorrect(){ playTone(523.25,0.12,'sine',0.22,0); playTone(659.25,0.12
 function sfxWrong(){ playTone(220,0.3,'sawtooth',0.22,0); playTone(160,0.35,'sawtooth',0.18,0.08); }
 function sfxSubmit(){ playTone(660,0.08,'sine',0.15,0); }
 function sfxJoin(){ playTone(494,0.1,'sine',0.18,0); playTone(659,0.12,'sine',0.18,0.1); }
+function sfxUnlock(){ playTone(784,0.1,'sine',0.2,0); playTone(1046.5,0.16,'sine',0.2,0.1); }
+function sfxTimeUp(){ playTone(330,0.18,'square',0.2,0); playTone(330,0.18,'square',0.2,0.25); playTone(247,0.4,'square',0.2,0.5); }
 
 /* ============================================================
    PEER-TO-PEER NETWORKING (PeerJS — no server of our own needed)
@@ -394,6 +438,16 @@ const App = {
   dailyDoubleMode: 'random',      // 'random' | 'manual' — host-only, never broadcast
   dailyDoubleClueIds: [],          // host-only secret list of clue ids flagged as Daily Double
   pickingDailyDouble: false,        // host-only: board clicks mark/unmark DD tiles instead of opening them
+  settingsPanelOpen: false,         // host-side UI only
+  lockOnOpen: true,                  // host setting: responses start locked until the host unlocks them
+  timerEnabled: false,               // host setting: show an answer countdown
+  timerSeconds: 10,                  // host setting: countdown length
+  timerSecondsInput: '10',           // what's typed in the seconds box (kept separately so a re-render mid-typing doesn't wipe it)
+  timerLocalEnd: 0,                  // when the running countdown ends, on THIS device's clock
+  timerForPid: null,                 // host-only: which buzzer the running timer belongs to
+  judged: {},                         // host-only: pid -> 'correct' | 'wrong' for the current clue
+  buzzRoundActive: false,            // host-only: buzzes still accepted (keeps late-but-honest buzzes queued after the first one locks the floor)
+  submitGraceUntil: 0,               // host-only: brief grace window for answers sent right as submissions close
 };
 
 function genRoomCode(){
@@ -406,9 +460,9 @@ function genRoomCode(){
 function defaultGameState(){
   return {
     teams: [
-      { id:'t1', name:'Team 1', color:'#F28500', score:0 },
+      { id:'t1', name:'Team 1', color:'#F2B705', score:0 },
       { id:'t2', name:'Team 2', color:'#3DA5D9', score:0 },
-      { id:'t3', name:'Team 3', color:'#eb4034', score:0 },
+      { id:'t3', name:'Team 3', color:'#E4572E', score:0 },
       { id:'t4', name:'Team 4', color:'#9B5DE5', score:0 },
     ],
     allowNoTeam: true,
@@ -426,6 +480,12 @@ function defaultGameState(){
     ddPhase: null,     // 'select-answerer' | 'wager' | 'clue'
     ddAnswerer: null,   // { type:'team'|'individual', id, label }
     ddWager: null,
+    timerRunning: false,
+    timerRemainingMs: 0,  // filled in at send time so each device can count down on its own clock
+    timerTotalMs: 0,
+    timerExpired: false,
+    timerFor: '',         // who the clock is for ("Jordan", "Team 2", "Everyone")
+    correctNames: [],     // who got the current clue right, shown with the revealed answer
   };
 }
 
@@ -497,7 +557,7 @@ function setupHostConnection(conn){
   conn.on('open', () => {
     // Send the current state right away so a joining screen can show
     // real team names / settings before the player actually joins.
-    conn.send({ type:'state', state: App.state, categories: App.categories });
+    conn.send({ type:'state', state: stateForSend(), categories: App.categories });
   });
   conn.on('data', (msg) => handleHostMessage(conn, msg));
   conn.on('close', () => { delete App.connections[conn.peer]; render(); });
@@ -532,18 +592,24 @@ function handleHostMessage(conn, msg){
   if(!p || p.role === 'spectator') return; // spectators can't buzz or answer
 
   if(msg.type === 'buzz'){
-    if(!App.state.currentClueId || App.state.revealed) return;
+    const s = App.state;
+    if(!s.currentClueId || s.revealed || s.isDailyDouble || s.mode !== 'buzzer') return;
+    // Locked buzzers really are locked: nothing counts until the host unlocks.
+    if(!s.buzzOpen && !App.buzzRoundActive) return;
+    if(s.lockedOut.indexOf(conn.peer) !== -1) return;
     if(App.buzzList.some(b => b.pid === conn.peer)) return;
     App.buzzList.push({ pid: conn.peer, name: p.name, teamId: p.teamId });
-    if(App.buzzList.length === 1 && App.state.buzzOpen){
-      App.state.buzzOpen = false; // first-in locks the floor
+    if(s.buzzOpen && activeAnswerer()){
+      s.buzzOpen = false; // first-in locks the floor
     }
-    App.state.buzzOrderSummary = App.buzzList.map(b => ({ pid:b.pid, name:b.name, teamId:b.teamId }));
+    s.buzzOrderSummary = App.buzzList.map(b => ({ pid:b.pid, name:b.name, teamId:b.teamId }));
+    syncBuzzTimer();
     sfxBuzz();
     broadcastState();
     render();
   } else if(msg.type === 'answer'){
     if(!App.state.currentClueId || App.state.revealed) return;
+    if(!App.state.submitOpen && Date.now() > App.submitGraceUntil) return;
     if(App.answerList.some(a => a.pid === conn.peer)) return;
     const text = sanitizeText(msg.text, 300);
     if(!text) return;
@@ -554,29 +620,117 @@ function handleHostMessage(conn, msg){
   }
 }
 
+// Devices' clocks never agree exactly, so instead of sending "the timer ends
+// at 9:14:32", the host sends "X ms remain" and each device counts down locally.
+function stateForSend(){
+  const s = App.state;
+  s.timerRemainingMs = s.timerRunning ? Math.max(0, App.timerLocalEnd - Date.now()) : 0;
+  return s;
+}
+
 function broadcastState(){
+  const payload = { type:'state', state: stateForSend(), categories: App.categories };
   Object.keys(App.connections).forEach(pid => {
     const c = App.connections[pid];
-    if(c.conn && c.conn.open) c.conn.send({ type:'state', state: App.state, categories: App.categories });
+    if(c.conn && c.conn.open) c.conn.send(payload);
   });
+}
+
+/* ---------- Answer timer (host is the source of truth) ---------- */
+function startTimer(label){
+  if(!App.timerEnabled) return;
+  const ms = App.timerSeconds * 1000;
+  App.timerLocalEnd = Date.now() + ms;
+  const s = App.state;
+  s.timerRunning = true;
+  s.timerExpired = false;
+  s.timerTotalMs = ms;
+  s.timerFor = label || '';
+}
+
+function stopTimer(){
+  const s = App.state;
+  s.timerRunning = false;
+  s.timerExpired = false;
+  s.timerFor = '';
+  App.timerForPid = null;
+}
+
+function onTimerExpired(){
+  const s = App.state;
+  s.timerRunning = false;
+  s.timerExpired = true;
+  if(s.mode === 'type' && !s.isDailyDouble && s.submitOpen){
+    s.submitOpen = false; // time's up — close the answer box for everyone
+    App.submitGraceUntil = Date.now() + 1500;
+  }
+  sfxTimeUp();
+  broadcastState();
+  render();
+}
+
+// The person currently "on the clock" in buzzer mode: first in line who
+// hasn't already been marked wrong.
+function activeAnswerer(){
+  const s = App.state;
+  return App.buzzList.find(b => s.lockedOut.indexOf(b.pid) === -1 && App.judged[b.pid] !== 'correct') || null;
+}
+
+// Keep the timer pointed at whoever's up in buzzer mode.
+function syncBuzzTimer(){
+  const s = App.state;
+  if(!s.currentClueId || s.isDailyDouble || s.mode !== 'buzzer' || s.revealed) return;
+  const active = activeAnswerer();
+  if(!active){
+    if(s.timerRunning || s.timerExpired) stopTimer();
+    return;
+  }
+  if(App.timerEnabled && App.timerForPid !== active.pid){
+    startTimer(active.name);
+    App.timerForPid = active.pid;
+  }
+}
+
+function hostStartTimer(){
+  const s = App.state;
+  let label = 'Everyone';
+  if(s.isDailyDouble){
+    label = s.ddAnswerer ? s.ddAnswerer.label : '';
+  } else if(s.mode === 'buzzer'){
+    const a = activeAnswerer();
+    if(!a) return;
+    label = a.name;
+    App.timerForPid = a.pid;
+  } else if(!s.submitOpen){
+    s.submitOpen = true; // restarting the clock in type mode reopens the answer box
+  }
+  startTimer(label);
+  broadcastState();
+  render();
 }
 
 function hostOpenClue(catId, clueId){
   const isDD = App.dailyDoubleClueIds.indexOf(clueId) !== -1;
+  const startLocked = App.lockOnOpen;
   App.state.currentCatId = catId;
   App.state.currentClueId = clueId;
   App.state.revealed = false;
   App.state.lockedOut = [];
   App.state.buzzOrderSummary = [];
   App.state.answerOrderSummary = [];
+  App.state.correctNames = [];
   App.state.isDailyDouble = isDD;
   App.state.ddPhase = isDD ? 'select-answerer' : null;
   App.state.ddAnswerer = null;
   App.state.ddWager = null;
-  App.state.buzzOpen = !isDD && App.state.mode === 'buzzer';
-  App.state.submitOpen = !isDD && App.state.mode === 'type';
+  App.state.buzzOpen = !isDD && App.state.mode === 'buzzer' && !startLocked;
+  App.state.submitOpen = !isDD && App.state.mode === 'type' && !startLocked;
+  App.buzzRoundActive = App.state.buzzOpen;
   App.buzzList = [];
   App.answerList = [];
+  App.judged = {};
+  stopTimer();
+  if(App.state.submitOpen) startTimer('Everyone');
   broadcastState();
   render();
 }
@@ -591,6 +745,9 @@ function hostSetDailyDoubleAnswerer(type, id, label){
 function hostConfirmWager(amount){
   App.state.ddWager = amount;
   App.state.ddPhase = 'clue';
+  // With "lock until I unlock" on, the Daily Double clock waits for the host
+  // to finish reading and press Start Timer; otherwise it starts right away.
+  if(!App.lockOnOpen) startTimer(App.state.ddAnswerer ? App.state.ddAnswerer.label : '');
   broadcastState();
   render();
 }
@@ -610,23 +767,40 @@ function hostToggleAllowNoTeam(){
 
 function hostToggleBuzzOpen(){
   App.state.buzzOpen = !App.state.buzzOpen;
+  App.buzzRoundActive = App.state.buzzOpen;
   broadcastState();
   render();
 }
 
 function hostToggleSubmitOpen(){
   App.state.submitOpen = !App.state.submitOpen;
+  if(App.state.submitOpen){
+    startTimer('Everyone');
+  } else {
+    App.submitGraceUntil = Date.now() + 1500;
+    stopTimer();
+  }
   broadcastState();
   render();
+}
+
+// Shows the answer to everyone and shuts the clue down for responses.
+function revealAndWrapUp(){
+  const s = App.state;
+  s.revealed = true;
+  s.buzzOpen = false;
+  s.submitOpen = false;
+  App.buzzRoundActive = false;
+  stopTimer();
 }
 
 function hostReveal(){
-  App.state.revealed = true;
+  revealAndWrapUp();
   broadcastState();
   render();
 }
 
-function hostAward(pid, teamId, delta){
+function applyAward(pid, teamId, delta){
   if(teamId){
     const team = App.state.teams.find(t => t.id === teamId);
     if(team) team.score += delta;
@@ -634,14 +808,83 @@ function hostAward(pid, teamId, delta){
     // Player with no team — track their points individually so it isn't lost.
     App.connections[pid].score = (App.connections[pid].score || 0) + delta;
   }
+}
+
+function hostAward(pid, teamId, delta){
+  applyAward(pid, teamId, delta);
   broadcastState();
   render();
 }
 
-function hostMarkWrong(pid){
-  if(App.state.lockedOut.indexOf(pid) === -1) App.state.lockedOut.push(pid);
-  App.state.buzzOpen = true; // reopen the floor for remaining players
+function correctLabel(name, teamId){
+  return teamId ? `${name} (${teamName(teamId)})` : name;
+}
+
+// "Correct" now awards the points AND reveals the answer to everyone. The clue
+// stays on screen until the host clicks "Back to Board".
+function hostMarkCorrect(pid, teamId, value, name){
+  if(App.judged[pid]) return;
+  sfxCorrect();
+  applyAward(pid, teamId, value);
+  App.judged[pid] = 'correct';
+  App.state.correctNames.push(correctLabel(name, teamId));
+  revealAndWrapUp();
   broadcastState();
+  render();
+}
+
+function hostMarkWrong(pid, teamId, value){
+  if(App.judged[pid]) return;
+  const s = App.state;
+  sfxWrong();
+  applyAward(pid, teamId, -value);
+  App.judged[pid] = 'wrong';
+  if(s.lockedOut.indexOf(pid) === -1) s.lockedOut.push(pid);
+  if(s.mode === 'buzzer' && !s.revealed){
+    // If someone else already buzzed, they're up next; otherwise reopen the floor.
+    s.buzzOpen = !activeAnswerer();
+    App.buzzRoundActive = true;
+    stopTimer();
+    syncBuzzTimer();
+  }
+  broadcastState();
+  render();
+}
+
+function hostJudgeDailyDouble(correct){
+  const s = App.state;
+  if(App.judged.__dd) return;
+  const pid = s.ddAnswerer.type === 'individual' ? s.ddAnswerer.id : null;
+  const teamId = s.ddAnswerer.type === 'team' ? s.ddAnswerer.id : null;
+  App.judged.__dd = correct ? 'correct' : 'wrong';
+  if(correct){
+    sfxCorrect();
+    applyAward(pid, teamId, s.ddWager);
+    s.correctNames.push(s.ddAnswerer.label);
+  } else {
+    sfxWrong();
+    applyAward(pid, teamId, -s.ddWager);
+  }
+  revealAndWrapUp();
+  broadcastState();
+  render();
+}
+
+/* ---------- Settings ---------- */
+function hostToggleLockOnOpen(){ App.lockOnOpen = !App.lockOnOpen; render(); }
+
+function hostToggleTimer(){
+  App.timerEnabled = !App.timerEnabled;
+  if(!App.timerEnabled && App.state.timerRunning){ stopTimer(); broadcastState(); }
+  render();
+}
+
+function hostSetTimerSeconds(raw){
+  let n = parseInt(raw, 10);
+  if(isNaN(n)) n = App.timerSeconds;
+  n = Math.max(3, Math.min(300, n));
+  App.timerSeconds = n;
+  App.timerSecondsInput = String(n);
   render();
 }
 
@@ -663,8 +906,12 @@ function hostCloseClue(){
   App.state.ddAnswerer = null;
   App.state.ddWager = null;
   App.state.lockedOut = [];
+  App.state.correctNames = [];
   App.buzzList = [];
   App.answerList = [];
+  App.judged = {};
+  App.buzzRoundActive = false;
+  stopTimer();
   broadcastState();
   render();
 }
@@ -724,10 +971,26 @@ function playerConnect(){
 function handlePlayerMessage(msg){
   if(!msg || msg.type !== 'state') return;
   const s = msg.state;
-  const clueChanged = !App.state || App.state.currentClueId !== s.currentClueId;
+  const prev = App.state;
+  const clueChanged = !prev || prev.currentClueId !== s.currentClueId;
+
+  if(s.timerRunning) App.timerLocalEnd = Date.now() + (s.timerRemainingMs || 0);
+
+  // Little audio cues for players (only once they're in the game, not on the join screen).
+  if(App.view === 'player-play' && prev && !clueChanged && s.currentClueId){
+    const unlocked = (!prev.buzzOpen && s.buzzOpen && s.mode === 'buzzer' && !(prev.buzzOrderSummary||[]).length) ||
+                     (!prev.submitOpen && s.submitOpen && s.mode === 'type');
+    if(unlocked) sfxUnlock();
+    if(!prev.timerExpired && s.timerExpired) sfxTimeUp();
+  }
+
   App.state = s;
   App.categories = msg.categories || App.categories;
   if(clueChanged){ App.myBuzzed = false; App.mySubmitted = false; App.answerDraft = ''; }
+  // If a buzz didn't count (e.g. it crossed paths with the host locking buzzers),
+  // let the player buzz again once things reopen instead of being stuck.
+  const myId = App.peer ? App.peer.id : '';
+  if(App.myBuzzed && !s.buzzOpen && !(s.buzzOrderSummary || []).some(b => b.pid === myId)) App.myBuzzed = false;
   if(App.joinPhase === 'connecting'){ App.joinPhase = 'picking'; }
   render();
 }
@@ -782,6 +1045,11 @@ function render(){
     focusInfo = { id: active.id, start: active.selectionStart, end: active.selectionEnd };
   }
 
+  // Hang on to a clue video that's already playing, so a screen refresh
+  // (someone buzzes, the timer starts, etc.) doesn't restart it or re-mute it.
+  const oldVideo = root.querySelector('.clue-media video');
+  const oldVideoWasPlaying = oldVideo ? !oldVideo.paused : false;
+
   root.innerHTML = '';
   let node;
   if(App.view === 'landing') node = renderLanding();
@@ -790,6 +1058,12 @@ function render(){
   else if(App.view === 'player-play') node = renderPlayerPlay();
   else node = renderLanding();
   root.appendChild(node);
+
+  const newVideo = root.querySelector('.clue-media video');
+  if(oldVideo && newVideo && oldVideo.getAttribute('src') === newVideo.getAttribute('src')){
+    newVideo.replaceWith(oldVideo);
+    if(oldVideoWasPlaying){ try{ const p = oldVideo.play(); if(p && p.catch) p.catch(() => {}); }catch(e){} }
+  }
 
   if(focusInfo){
     const restored = document.getElementById(focusInfo.id);
@@ -801,6 +1075,44 @@ function render(){
     }
   }
 }
+
+/* ---------- Timer display ---------- */
+function timerHtml(){
+  const s = App.state;
+  if(!s || !(s.timerRunning || s.timerExpired)) return '';
+  if(s.timerExpired){
+    return `<div class="timer-display expired" id="timer-display">
+      <div class="timer-label">${escapeHtml(s.timerFor || '')}</div>
+      <div class="timer-count" id="timer-count">TIME'S UP!</div>
+    </div>`;
+  }
+  const remaining = Math.max(0, App.timerLocalEnd - Date.now());
+  const secs = Math.ceil(remaining / 1000);
+  const pct = s.timerTotalMs ? Math.min(100, (remaining / s.timerTotalMs) * 100) : 0;
+  return `<div class="timer-display ${secs <= 5 ? 'low' : ''}" id="timer-display">
+    <div class="timer-label">${escapeHtml(s.timerFor ? s.timerFor + "'s time" : 'Time left')}</div>
+    <div class="timer-count" id="timer-count">${secs}</div>
+    <div class="timer-bar"><div class="timer-fill" id="timer-fill" style="width:${pct}%"></div></div>
+  </div>`;
+}
+
+// Runs a few times a second. Only touches the timer numbers — never redraws
+// the whole screen — so typing and videos aren't interrupted.
+function tickTimer(){
+  const s = App.state;
+  if(!s || !s.timerRunning) return;
+  const remaining = Math.max(0, App.timerLocalEnd - Date.now());
+  if(App.view === 'host-board' && remaining <= 0){ onTimerExpired(); return; }
+  const box = document.getElementById('timer-display');
+  const count = document.getElementById('timer-count');
+  const fill = document.getElementById('timer-fill');
+  if(!box || !count) return;
+  const secs = Math.ceil(remaining / 1000);
+  count.textContent = String(secs);
+  box.classList.toggle('low', secs <= 5);
+  if(fill && s.timerTotalMs) fill.style.width = Math.min(100, (remaining / s.timerTotalMs) * 100) + '%';
+}
+setInterval(tickTimer, 200);
 
 function renderLanding(){
   const wrap = el(`
@@ -925,32 +1237,20 @@ function renderHostBoard(){
         </div>
       </div>
       <div class="topbar-controls">
-        <div class="toggle-row">
-          <span>Buzzer</span>
-          <div class="toggle ${s.mode==='type' ? 'on' : ''}" id="mode-toggle"><div class="knob"></div></div>
-          <span>Type Answer</span>
+        <div class="status-line">
+          ${s.mode === 'buzzer' ? 'Buzzer' : 'Type Answer'} mode
+          &middot; Lock ${App.lockOnOpen ? 'on' : 'off'}
+          &middot; Timer ${App.timerEnabled ? App.timerSeconds + 's' : 'off'}
         </div>
-        <div class="toggle-row">
-          <span>Require team</span>
-          <div class="toggle ${s.allowNoTeam ? '' : 'on'}" id="noteam-toggle"><div class="knob"></div></div>
-        </div>
-        <div class="toggle-row">
-          <span>Random DD</span>
-          <div class="toggle ${App.dailyDoubleMode==='manual' ? 'on' : ''}" id="dd-mode-toggle"><div class="knob"></div></div>
-          <span>Pick DD</span>
-        </div>
-        ${App.dailyDoubleMode === 'manual' ? `<button class="small-btn" id="btn-pick-dd">${App.pickingDailyDouble ? 'Done Picking' : 'Pick Daily Double'}</button>` : ''}
         <button class="small-btn" id="btn-toggle-roster">Players (${connKeys.length})</button>
+        <button class="small-btn" id="btn-toggle-settings">&#9881; Settings</button>
       </div>
     </div>
   `);
-  topbar.querySelector('#mode-toggle').onclick = () => hostToggleMode();
-  topbar.querySelector('#noteam-toggle').onclick = () => hostToggleAllowNoTeam();
-  topbar.querySelector('#dd-mode-toggle').onclick = () => hostToggleDailyDoubleMode();
-  const pickDdBtn = topbar.querySelector('#btn-pick-dd');
-  if(pickDdBtn) pickDdBtn.onclick = () => { App.pickingDailyDouble = !App.pickingDailyDouble; render(); };
   topbar.querySelector('#btn-toggle-roster').onclick = () => { App.rosterPanelOpen = !App.rosterPanelOpen; render(); };
+  topbar.querySelector('#btn-toggle-settings').onclick = () => { App.settingsPanelOpen = !App.settingsPanelOpen; render(); };
   wrap.appendChild(topbar);
+  wrap.appendChild(renderSettingsDrawer());
 
   const scoreboard = el(`<div class="scoreboard"></div>`);
   s.teams.forEach(t => {
@@ -967,6 +1267,17 @@ function renderHostBoard(){
   wrap.appendChild(scoreboard);
 
   wrap.appendChild(renderRosterDrawer(connKeys, playerCount, spectatorCount));
+
+  if(App.pickingDailyDouble){
+    const banner = el(`
+      <div class="pick-banner">
+        <span>Click tiles to mark them as Daily Doubles (&#9733;). Click again to unmark.</span>
+        <button class="small-btn" id="btn-done-picking">Done</button>
+      </div>
+    `);
+    banner.querySelector('#btn-done-picking').onclick = () => { App.pickingDailyDouble = false; render(); };
+    wrap.appendChild(banner);
+  }
 
   const boardWrap = el(`<div class="board-wrap"><div class="board"></div></div>`);
   const board = boardWrap.querySelector('.board');
@@ -1002,6 +1313,88 @@ function renderHostBoard(){
   }
 
   return wrap;
+}
+
+function renderSettingsDrawer(){
+  const s = App.state;
+  const clueOpen = !!s.currentClueId;
+  const ddCount = App.dailyDoubleClueIds.length;
+  const drawer = el(`
+    <div class="roster-drawer settings-drawer ${App.settingsPanelOpen ? 'open' : ''}">
+      <div class="roster-drawer-header">
+        <h3>Settings</h3>
+        <button class="small-btn" id="btn-close-settings">Close</button>
+      </div>
+
+      <div class="setting">
+        <div class="setting-head">
+          <div class="setting-title">How players respond</div>
+        </div>
+        <div class="toggle-row" style="margin-top:10px;">
+          <span>Buzzer</span>
+          <div class="toggle ${s.mode==='type' ? 'on' : ''}" id="mode-toggle"><div class="knob"></div></div>
+          <span>Type Answer</span>
+        </div>
+        <div class="setting-desc">${clueOpen ? 'Close the current clue to switch.' : 'Buzzer: first to buzz answers out loud. Type Answer: everyone types an answer and you see them in the order they came in.'}</div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-head">
+          <div class="setting-title">Lock responses until I unlock</div>
+          <div class="toggle ${App.lockOnOpen ? 'on' : ''}" id="lock-toggle"><div class="knob"></div></div>
+        </div>
+        <div class="setting-desc">Buzzers / answer boxes start locked when a clue opens, so you can finish reading. Click "Unlock" and they open for everyone at once.</div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-head">
+          <div class="setting-title">Answer timer</div>
+          <div class="toggle ${App.timerEnabled ? 'on' : ''}" id="timer-toggle"><div class="knob"></div></div>
+        </div>
+        <div class="toggle-row" style="margin-top:10px;">
+          <input class="setting-input" id="timer-seconds-input" type="number" min="3" max="300" ${App.timerEnabled ? '' : 'disabled'}>
+          <span>seconds</span>
+        </div>
+        <div class="setting-desc">A countdown everyone can see. Buzzer mode: starts when someone buzzes in (and again for the next person if they're wrong). Type Answer: runs while the answer box is open and closes it at zero.</div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-head">
+          <div class="setting-title">Require a team</div>
+          <div class="toggle ${s.allowNoTeam ? '' : 'on'}" id="noteam-toggle"><div class="knob"></div></div>
+        </div>
+        <div class="setting-desc">When on, "Play without a team" is hidden from the join screen. Spectating is always allowed.</div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-head">
+          <div class="setting-title">Daily Double</div>
+        </div>
+        <div class="toggle-row" style="margin-top:10px;">
+          <span>Random</span>
+          <div class="toggle ${App.dailyDoubleMode==='manual' ? 'on' : ''}" id="dd-mode-toggle"><div class="knob"></div></div>
+          <span>I pick</span>
+        </div>
+        ${App.dailyDoubleMode === 'manual' ? `
+          <div style="margin-top:10px;"><button class="small-btn" id="btn-pick-dd">Choose tiles on the board</button></div>
+          <div class="setting-desc">${ddCount} tile${ddCount === 1 ? '' : 's'} chosen. Chosen tiles show a &#9733; on your screen only.</div>
+        ` : `<div class="setting-desc">One tile is secretly picked at random (shown with a &#9733; on your screen only).</div>`}
+      </div>
+    </div>
+  `);
+  drawer.querySelector('#btn-close-settings').onclick = () => { App.settingsPanelOpen = false; render(); };
+  drawer.querySelector('#mode-toggle').onclick = () => hostToggleMode();
+  drawer.querySelector('#lock-toggle').onclick = () => hostToggleLockOnOpen();
+  drawer.querySelector('#timer-toggle').onclick = () => hostToggleTimer();
+  drawer.querySelector('#noteam-toggle').onclick = () => hostToggleAllowNoTeam();
+  drawer.querySelector('#dd-mode-toggle').onclick = () => hostToggleDailyDoubleMode();
+  const secs = drawer.querySelector('#timer-seconds-input');
+  secs.value = App.timerSecondsInput;
+  secs.oninput = (e) => { App.timerSecondsInput = e.target.value; };
+  secs.onchange = (e) => hostSetTimerSeconds(e.target.value);
+  const pickBtn = drawer.querySelector('#btn-pick-dd');
+  if(pickBtn) pickBtn.onclick = () => { App.pickingDailyDouble = true; App.settingsPanelOpen = false; render(); };
+  return drawer;
 }
 
 function renderRosterDrawer(connKeys, playerCount, spectatorCount){
@@ -1080,6 +1473,30 @@ function renderHostClueOverlay(){
 
   const clue = currentClue();
   const cat = findCategory(s.currentCatId);
+
+  // Response controls (buzzer / answer box). The big gold "Unlock" button
+  // only shows while nobody has responded yet, so it can't be hit by mistake mid-answer.
+  let responseBtn = '';
+  if(!s.isDailyDouble && !s.revealed){
+    if(s.mode === 'buzzer'){
+      if(s.buzzOpen) responseBtn = `<button class="small-btn" id="btn-toggle-buzz">Lock Buzzers</button>`;
+      else if(!App.buzzList.length) responseBtn = `<button class="big-btn unlock-btn" id="btn-toggle-buzz">Unlock Buzzers</button>`;
+      else responseBtn = `<button class="small-btn" id="btn-toggle-buzz">Reopen Buzzers</button>`;
+    } else {
+      if(s.submitOpen) responseBtn = `<button class="small-btn" id="btn-toggle-submit">Close Answers</button>`;
+      else if(!App.answerList.length) responseBtn = `<button class="big-btn unlock-btn" id="btn-toggle-submit">Unlock Answers</button>`;
+      else responseBtn = `<button class="small-btn" id="btn-toggle-submit">Reopen Answers</button>`;
+    }
+  }
+
+  // Manual timer button (the timer also starts on its own — this is for restarts).
+  let timerBtn = '';
+  if(App.timerEnabled && !s.revealed){
+    const canTime = s.isDailyDouble || s.mode === 'type' || !!activeAnswerer();
+    if(canTime) timerBtn = `<button class="small-btn" id="btn-start-timer">${(s.timerRunning || s.timerExpired) ? 'Restart Timer' : 'Start Timer'}</button>`;
+  }
+
+  const ddJudged = App.judged.__dd;
   const overlay = el(`
     <div class="overlay">
       <div class="overlay-top">
@@ -1091,19 +1508,22 @@ function renderHostClueOverlay(){
         <div class="clue-text">${escapeHtml(clue.clue)}</div>
         ${clue.media ? `<div class="clue-media">${clue.media.type==='video' ? `<video src="${clue.media.url}" controls autoplay muted loop></video>` : `<img src="${clue.media.url}">`}</div>` : ''}
         ${s.revealed ? `<div class="answer-reveal">${escapeHtml(clue.answer)}</div>` : ''}
+        ${s.revealed && s.correctNames.length ? `<div class="correct-by">&#10003; ${s.correctNames.map(escapeHtml).join(', ')}</div>` : ''}
+        ${timerHtml()}
         ${s.isDailyDouble ? '' : (s.mode === 'buzzer' ? renderBuzzFeed() : renderAnswerFeed())}
       </div>
       <div class="overlay-controls">
         <div class="control-row">
-          ${s.isDailyDouble ? '' : (s.mode === 'buzzer'
-            ? `<button class="small-btn" id="btn-toggle-buzz">${s.buzzOpen ? 'Lock Buzzers' : 'Open Buzzers'}</button>`
-            : `<button class="small-btn" id="btn-toggle-submit">${s.submitOpen ? 'Close Submissions' : 'Open Submissions'}</button>`)}
+          ${responseBtn}
+          ${timerBtn}
           ${!s.revealed ? `<button class="small-btn" id="btn-reveal">Reveal Answer</button>` : ''}
-          ${s.isDailyDouble ? `
+          ${s.isDailyDouble && !ddJudged ? `
             <button class="small-btn" id="btn-dd-correct" style="background:var(--correct-green);color:#fff;">Correct (+$${s.ddWager})</button>
             <button class="small-btn" id="btn-dd-wrong" style="background:var(--wrong-red);color:#fff;">Wrong (-$${s.ddWager})</button>
           ` : ''}
-          <button class="small-btn danger" id="btn-close-clue-2">Close Clue</button>
+          ${s.revealed
+            ? `<button class="big-btn" id="btn-close-clue-2">Back to Board</button>`
+            : `<button class="small-btn danger" id="btn-close-clue-2">Close Clue</button>`}
         </div>
       </div>
     </div>
@@ -1116,19 +1536,19 @@ function renderHostClueOverlay(){
   if(toggleBuzz) toggleBuzz.onclick = () => hostToggleBuzzOpen();
   const toggleSubmit = overlay.querySelector('#btn-toggle-submit');
   if(toggleSubmit) toggleSubmit.onclick = () => hostToggleSubmitOpen();
+  const timerStart = overlay.querySelector('#btn-start-timer');
+  if(timerStart) timerStart.onclick = () => hostStartTimer();
 
-  if(s.isDailyDouble){
-    const ddPid = s.ddAnswerer.type === 'individual' ? s.ddAnswerer.id : null;
-    const ddTeamId = s.ddAnswerer.type === 'team' ? s.ddAnswerer.id : null;
-    overlay.querySelector('#btn-dd-correct').onclick = () => { sfxCorrect(); hostAward(ddPid, ddTeamId, s.ddWager); hostCloseClue(); };
-    overlay.querySelector('#btn-dd-wrong').onclick = () => { sfxWrong(); hostAward(ddPid, ddTeamId, -s.ddWager); hostCloseClue(); };
+  if(s.isDailyDouble && !ddJudged){
+    overlay.querySelector('#btn-dd-correct').onclick = () => hostJudgeDailyDouble(true);
+    overlay.querySelector('#btn-dd-wrong').onclick = () => hostJudgeDailyDouble(false);
   }
 
   overlay.querySelectorAll('.mini-btn.correct').forEach(b => {
-    b.onclick = () => { sfxCorrect(); hostAward(b.dataset.pid, b.dataset.team, parseInt(b.dataset.value,10)); hostCloseClue(); };
+    b.onclick = () => hostMarkCorrect(b.dataset.pid, b.dataset.team, parseInt(b.dataset.value,10), b.dataset.name);
   });
   overlay.querySelectorAll('.mini-btn.wrong').forEach(b => {
-    b.onclick = () => { sfxWrong(); hostAward(b.dataset.pid, b.dataset.team, -parseInt(b.dataset.value,10)); hostMarkWrong(b.dataset.pid); };
+    b.onclick = () => hostMarkWrong(b.dataset.pid, b.dataset.team, parseInt(b.dataset.value,10));
   });
   return overlay;
 }
@@ -1193,16 +1613,22 @@ function renderBuzzFeed(){
   const clue = currentClue();
   if(!App.buzzList.length) return `<div class="buzz-feed"><div class="feed-empty">No buzz-ins yet.</div></div>`;
   return `<div class="buzz-feed">${App.buzzList.map((b,i) => {
+    const verdict = App.judged[b.pid];
     const locked = s.lockedOut.indexOf(b.pid) !== -1;
+    let right;
+    if(verdict === 'correct') right = `<span class="judged-badge correct">Correct</span>`;
+    else if(verdict === 'wrong' || locked) right = `<span class="judged-badge wrong">Wrong &middot; locked out</span>`;
+    else if(s.revealed) right = '';
+    else right = `
+      <div class="feed-actions">
+        <button class="mini-btn correct" data-team="${escapeHtml(b.teamId||'')}" data-value="${clue.value}" data-pid="${escapeHtml(b.pid)}" data-name="${escapeHtml(b.name)}">Correct</button>
+        <button class="mini-btn wrong" data-team="${escapeHtml(b.teamId||'')}" data-value="${clue.value}" data-pid="${escapeHtml(b.pid)}">Wrong</button>
+      </div>`;
     return `
-      <div class="feed-row ${locked?'locked':''}">
+      <div class="feed-row ${(locked && verdict !== 'correct')?'locked':''}">
         <div class="feed-rank">#${i+1}</div>
         <div class="feed-name">${escapeHtml(b.name)}<div class="feed-team">${escapeHtml(teamName(b.teamId))}</div></div>
-        ${!locked ? `
-          <div class="feed-actions">
-            <button class="mini-btn correct" data-team="${escapeHtml(b.teamId||'')}" data-value="${clue.value}" data-pid="${escapeHtml(b.pid)}">Correct</button>
-            <button class="mini-btn wrong" data-team="${escapeHtml(b.teamId||'')}" data-value="${clue.value}" data-pid="${escapeHtml(b.pid)}">Wrong</button>
-          </div>` : `<div class="hint-text">locked out</div>`}
+        ${right}
       </div>`;
   }).join('')}</div>`;
 }
@@ -1215,10 +1641,12 @@ function renderAnswerFeed(){
       <div class="feed-rank">#${i+1}</div>
       <div class="feed-name">${escapeHtml(a.name)}<div class="feed-team">${escapeHtml(teamName(a.teamId))}</div></div>
       <div class="feed-answer-text">${escapeHtml(a.text)}</div>
-      <div class="feed-actions">
-        <button class="mini-btn correct" data-team="${escapeHtml(a.teamId||'')}" data-value="${clue.value}" data-pid="${escapeHtml(a.pid)}">Correct</button>
-        <button class="mini-btn wrong" data-team="${escapeHtml(a.teamId||'')}" data-value="${clue.value}" data-pid="${escapeHtml(a.pid)}">Wrong</button>
-      </div>
+      ${App.judged[a.pid]
+        ? `<span class="judged-badge ${App.judged[a.pid]}">${App.judged[a.pid] === 'correct' ? 'Correct' : 'Wrong'}</span>`
+        : `<div class="feed-actions">
+            <button class="mini-btn correct" data-team="${escapeHtml(a.teamId||'')}" data-value="${clue.value}" data-pid="${escapeHtml(a.pid)}" data-name="${escapeHtml(a.name)}">Correct</button>
+            <button class="mini-btn wrong" data-team="${escapeHtml(a.teamId||'')}" data-value="${clue.value}" data-pid="${escapeHtml(a.pid)}">Wrong</button>
+          </div>`}
     </div>`).join('')}</div>`;
 }
 
@@ -1269,8 +1697,18 @@ function renderPlayerPlay(){
     if(clue.media){
       main.appendChild(el(`<div class="clue-media">${clue.media.type==='video' ? `<video src="${clue.media.url}" controls autoplay muted loop></video>` : `<img src="${clue.media.url}">`}</div>`));
     }
+    const timerBox = timerHtml();
     if(s.revealed){
       main.appendChild(el(`<div class="answer-reveal">${escapeHtml(clue.answer)}</div>`));
+      if(s.correctNames && s.correctNames.length){
+        main.appendChild(el(`<div class="correct-by">&#10003; ${s.correctNames.map(escapeHtml).join(', ')}</div>`));
+      }
+    } else if(timerBox){
+      main.appendChild(el(timerBox));
+    }
+
+    if(s.revealed){
+      // answer already shown above
     } else if(s.isDailyDouble){
       const myId = App.peer ? App.peer.id : '';
       const amAnswerer = s.ddAnswerer && (
@@ -1283,9 +1721,10 @@ function renderPlayerPlay(){
         main.appendChild(el(`<div class="hint-text">Daily Double &mdash; ${escapeHtml(s.ddAnswerer ? s.ddAnswerer.label : '')} is answering for $${s.ddWager}.</div>`));
       }
     } else if(isSpectator){
+      const queue = (s.buzzOrderSummary || []).filter(b => s.lockedOut.indexOf(b.pid) === -1);
       let msg;
       if(s.mode === 'buzzer'){
-        msg = (s.buzzOrderSummary && s.buzzOrderSummary.length) ? 'Watching — someone has buzzed in.' : (s.buzzOpen ? 'Watching — buzzers are open.' : 'Watching — buzzers are locked.');
+        msg = queue.length ? `Watching — ${escapeHtml(queue[0].name)} is answering.` : (s.buzzOpen ? 'Watching — buzzers are open.' : 'Watching — buzzers are locked.');
       } else {
         msg = s.submitOpen ? 'Watching — answers are open.' : 'Watching — waiting on the host.';
       }
@@ -1293,20 +1732,29 @@ function renderPlayerPlay(){
     } else if(s.mode === 'buzzer'){
       const myId = App.peer ? App.peer.id : '';
       const amLocked = s.lockedOut.indexOf(myId) !== -1;
-      const myRank = (s.buzzOrderSummary || []).findIndex(b => b.pid === myId);
-      if(myRank !== -1){
-        main.appendChild(el(`<div class="buzz-rank-msg">You buzzed in #${myRank+1}${myRank===0 ? ' — go!' : ' — waiting your turn'}</div>`));
+      const queue = (s.buzzOrderSummary || []).filter(b => s.lockedOut.indexOf(b.pid) === -1);
+      const myPos = queue.findIndex(b => b.pid === myId);
+      if(amLocked){
+        main.appendChild(el(`<button class="buzzer-btn" disabled>LOCKED</button>`));
+        main.appendChild(el(`<div class="hint-text">Not quite &mdash; you're locked out for this clue.</div>`));
+      } else if(myPos !== -1){
+        main.appendChild(el(`<div class="buzz-rank-msg">${myPos === 0 ? "You're up &mdash; answer now!" : `You're #${myPos+1} in line &mdash; waiting your turn`}</div>`));
       } else {
-        const btn = el(`<button class="buzzer-btn" ${(!s.buzzOpen || amLocked) ? 'disabled' : ''}>${amLocked ? 'LOCKED' : 'BUZZ'}</button>`);
+        const btn = el(`<button class="buzzer-btn" ${(!s.buzzOpen || App.myBuzzed) ? 'disabled' : ''}>${App.myBuzzed ? 'BUZZED' : 'BUZZ'}</button>`);
         btn.onclick = () => playerBuzz();
         main.appendChild(btn);
-        if(!s.buzzOpen && !amLocked) main.appendChild(el(`<div class="hint-text">Buzzers are locked right now.</div>`));
+        if(!s.buzzOpen){
+          const why = queue.length
+            ? `${escapeHtml(queue[0].name)} is answering&hellip;`
+            : 'Get ready &mdash; buzzers unlock when the host finishes reading.';
+          main.appendChild(el(`<div class="hint-text">${why}</div>`));
+        }
       }
     } else {
       if(App.mySubmitted){
         main.appendChild(el(`<div class="buzz-rank-msg">Answer submitted &mdash; waiting on the host.</div>`));
       } else if(!s.submitOpen){
-        main.appendChild(el(`<div class="hint-text">Waiting for the host to open answers&hellip;</div>`));
+        main.appendChild(el(`<div class="hint-text">${s.timerExpired ? "Time's up &mdash; answers are closed." : 'Get ready &mdash; the answer box unlocks when the host finishes reading.'}</div>`));
       } else {
         const box = el(`
           <div class="answer-box">
